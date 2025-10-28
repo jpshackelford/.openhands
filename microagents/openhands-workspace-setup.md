@@ -73,19 +73,3 @@ cd OpenHands
 ./.openhands/setup.sh
 cat .openhands/microagents/repo.md
 ```
-
-## Important Notes
-
-- This microagent does not have specific triggers - it responds to natural language requests about workspace setup
-- Always verify successful cloning of all repositories
-- Ensure the workspace directory `/workspace/project/` exists before cloning
-- The setup process may take several minutes depending on repository sizes
-
-## Repository Organization Migration
-
-**Note**: Some OpenHands repositories have been migrated from the `All-Hands-AI` organization to the `OpenHands` organization:
-
-- **Moved to OpenHands org**: OpenHands (main), runtime-api, agent-sdk
-- **Remaining in All-Hands-AI org**: OpenHands-Cloud, infra, deploy, docs-enterprise
-
-This microagent reflects the current repository locations as of October 2024.
