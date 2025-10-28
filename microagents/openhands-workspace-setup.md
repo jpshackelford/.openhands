@@ -30,14 +30,16 @@ The following repositories should be cloned for a complete OpenHands development
 # Navigate to workspace
 cd /workspace/project
 
-# Clone core OpenHands repositories
-git clone https://${GITHUB_TOKEN}@github.com/All-Hands-AI/OpenHands.git
+# Clone core OpenHands repositories from OpenHands organization
+git clone https://${GITHUB_TOKEN}@github.com/OpenHands/OpenHands.git
+git clone https://${GITHUB_TOKEN}@github.com/OpenHands/runtime-api.git
+git clone https://${GITHUB_TOKEN}@github.com/OpenHands/agent-sdk.git
+
+# Clone remaining repositories from All-Hands-AI organization
 git clone https://${GITHUB_TOKEN}@github.com/All-Hands-AI/OpenHands-Cloud.git
 git clone https://${GITHUB_TOKEN}@github.com/All-Hands-AI/infra.git
-git clone https://${GITHUB_TOKEN}@github.com/All-Hands-AI/agent-sdk.git
 git clone https://${GITHUB_TOKEN}@github.com/All-Hands-AI/deploy.git
 git clone https://${GITHUB_TOKEN}@github.com/All-Hands-AI/docs-enterprise.git
-git clone https://${GITHUB_TOKEN}@github.com/All-Hands-AI/runtime-api.git
 
 # Verify all repositories were cloned successfully
 ls -la /workspace/project/
@@ -63,7 +65,7 @@ When a user requests workspace setup, execute the repository cloning commands an
 ```bash
 # Example workflow
 cd /workspace/project
-git clone https://${GITHUB_TOKEN}@github.com/All-Hands-AI/OpenHands.git
+git clone https://${GITHUB_TOKEN}@github.com/OpenHands/OpenHands.git
 # ... (clone other repositories)
 
 # Before making changes to OpenHands repository:
@@ -78,3 +80,12 @@ cat .openhands/microagents/repo.md
 - Always verify successful cloning of all repositories
 - Ensure the workspace directory `/workspace/project/` exists before cloning
 - The setup process may take several minutes depending on repository sizes
+
+## Repository Organization Migration
+
+**Note**: Some OpenHands repositories have been migrated from the `All-Hands-AI` organization to the `OpenHands` organization:
+
+- **Moved to OpenHands org**: OpenHands (main), runtime-api, agent-sdk
+- **Remaining in All-Hands-AI org**: OpenHands-Cloud, infra, deploy, docs-enterprise
+
+This microagent reflects the current repository locations as of October 2024.
