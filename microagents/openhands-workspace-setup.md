@@ -1,13 +1,11 @@
 ---
-name: OpenHands Workspace Setup
-type: knowledge
-version: 1.0.0
-agent: CodeActAgent
 triggers:
   - "setup the workspace for openhands development"
   - "setup openhands workspace"
   - "prepare openhands development environment"
   - "clone openhands repositories"
+  - "openhands development setup"
+  - "openhands workspace"
 ---
 
 # OpenHands Workspace Setup Microagent

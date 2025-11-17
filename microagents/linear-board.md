@@ -1,5 +1,4 @@
 ---
-agent: CodeActAgent
 triggers:
   - "linear board"
   - "linear issues"

@@ -1,8 +1,11 @@
 ---
-name: Design Document Guidance
-type: knowledge
-version: 1.0.0
-agent: CodeActAgent
+triggers:
+  - "design document"
+  - "design doc"
+  - "technical design"
+  - "design template"
+  - "write design"
+  - "create design document"
 ---
 
 # Design Document Guidance Microagent
