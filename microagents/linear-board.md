@@ -1,7 +1,4 @@
 ---
-name: Linear Board Management
-type: knowledge
-version: 1.0.0
 agent: CodeActAgent
 triggers:
   - "linear board"
