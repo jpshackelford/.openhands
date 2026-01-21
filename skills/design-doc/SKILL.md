@@ -1,20 +1,22 @@
 ---
+name: design-doc
+description: Provides guidance and templates for writing comprehensive technical design documents. Use when creating design docs, technical specifications, or architecture documents.
 triggers:
-  - "design document"
-  - "design doc"
-  - "technical design"
-  - "design template"
-  - "write design"
-  - "create design document"
+  - design document
+  - design doc
+  - technical design
+  - design template
+  - write design
+  - create design document
 ---
 
-# Design Document Guidance Microagent
+# Design Document Guidance
 
-This microagent provides guidance and templates for writing comprehensive design documents following established best practices.
+This skill provides guidance and templates for writing comprehensive design documents following established best practices.
 
 ## Purpose
 
-This microagent helps developers create well-structured design documents by providing:
+This skill helps developers create well-structured design documents by providing:
 
 1. A standardized template for design documents
 2. Guidance on what to include in each section
@@ -63,8 +65,6 @@ When creating a design document:
 5. **Consider your audience**: Write for the implementer who needs to understand and build the solution
 
 ## Template Access
-
-To use the design document template:
 
 ```bash
 # Copy the template to start a new design document
