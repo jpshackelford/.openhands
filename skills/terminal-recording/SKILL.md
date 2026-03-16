@@ -285,6 +285,28 @@ chmod +x /tmp/ttyd
 sudo mv /tmp/ttyd /usr/local/bin/ttyd
 ```
 
+### Chromium Sandbox Error (Container Environments)
+
+If running in a container (like OpenHands sandbox) and encountering:
+```
+could not launch browser: No usable sandbox!
+```
+
+**Workaround options:**
+1. **Use Docker VHS image** (includes all dependencies):
+   ```bash
+   docker run --rm -v $PWD:/vhs ghcr.io/charmbracelet/vhs demo.tape
+   ```
+
+2. **Run VHS locally** on a machine with full browser support, then upload the GIF
+
+3. **Use asciinema** as an alternative for container environments:
+   ```bash
+   pip install asciinema agg
+   asciinema rec demo.cast
+   agg demo.cast demo.gif
+   ```
+
 ### GIF Too Large
 - Reduce dimensions: `Set Width 700` `Set Height 350`
 - Reduce framerate: `Set Framerate 15`
