@@ -319,12 +319,44 @@ def calculate_timings(
     return compiled_lines, audio_manifest
 
 
+def generate_srt_file(audio_manifest: list[dict], output_path: Path) -> None:
+    """Generate SRT subtitle file from audio manifest."""
+    
+    def ms_to_srt_time(ms: int) -> str:
+        """Convert milliseconds to SRT timestamp format (HH:MM:SS,mmm)."""
+        hours = ms // 3600000
+        minutes = (ms % 3600000) // 60000
+        seconds = (ms % 60000) // 1000
+        millis = ms % 1000
+        return f"{hours:02d}:{minutes:02d}:{seconds:02d},{millis:03d}"
+    
+    srt_content = []
+    subtitle_index = 1
+    
+    for segment in audio_manifest:
+        if not segment.get('text'):
+            continue
+        
+        start_ms = segment['start_ms']
+        end_ms = start_ms + segment['duration_ms']
+        
+        srt_content.append(f"{subtitle_index}")
+        srt_content.append(f"{ms_to_srt_time(start_ms)} --> {ms_to_srt_time(end_ms)}")
+        srt_content.append(segment['text'])
+        srt_content.append("")  # Blank line between entries
+        
+        subtitle_index += 1
+    
+    output_path.write_text("\n".join(srt_content))
+
+
 def generate_ffmpeg_mix_command(
     video_file: str,
     audio_manifest: list[dict],
-    output_file: str
+    output_file: str,
+    subtitle_file: str = None
 ) -> str:
-    """Generate FFmpeg command to mix video with narration audio."""
+    """Generate FFmpeg command to mix video with narration audio and subtitles."""
     if not audio_manifest:
         return f"# No audio to mix\ncp {video_file} {output_file}"
     
@@ -345,11 +377,27 @@ def generate_ffmpeg_mix_command(
     if not mix_inputs:
         return f"# No audio segments\ncp {video_file} {output_file}"
     
+    # Add subtitle file input if provided
+    if subtitle_file:
+        inputs.append(f"-i {subtitle_file}")
+        subtitle_input_idx = len(inputs) - 1
+    
     # Combine all delayed audio tracks
     filter_complex = ";".join(filter_parts)
     filter_complex += f";{''.join(mix_inputs)}amix=inputs={len(mix_inputs)}:duration=longest:normalize=0[narration]"
     
-    cmd = f"""ffmpeg -y \\
+    # Build output mappings
+    if subtitle_file:
+        # Map video, mixed audio, and subtitles
+        cmd = f"""ffmpeg -y \\
+  {' '.join(inputs)} \\
+  -filter_complex "{filter_complex}" \\
+  -map 0:v -map "[narration]" -map {subtitle_input_idx}:s \\
+  -c:v copy -c:a aac -b:a 192k -c:s mov_text \\
+  -metadata:s:s:0 language=eng -metadata:s:s:0 title="Narration" \\
+  {output_file}"""
+    else:
+        cmd = f"""ffmpeg -y \\
   {' '.join(inputs)} \\
   -filter_complex "{filter_complex}" \\
   -map 0:v -map "[narration]" \\
@@ -428,6 +476,11 @@ def main():
     manifest_path.write_text(json.dumps(audio_manifest, indent=2))
     print(f"   Audio manifest: {manifest_path}")
     
+    # Generate SRT subtitle file
+    srt_path = args.output_dir / "captions.srt"
+    generate_srt_file(audio_manifest, srt_path)
+    print(f"   Captions: {srt_path}")
+    
     # Generate FFmpeg command
     video_output = args.output_dir / (config.output_file or "output.mp4")
     final_output = args.output_dir / f"{args.tape_file.stem}_final.mp4"
@@ -435,7 +488,8 @@ def main():
     ffmpeg_cmd = generate_ffmpeg_mix_command(
         str(video_output),
         audio_manifest,
-        str(final_output)
+        str(final_output),
+        subtitle_file=str(srt_path)
     )
     
     mix_script_path = args.output_dir / "mix_audio.sh"
