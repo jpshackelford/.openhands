@@ -326,6 +326,17 @@ def split_caption_text(text: str, max_chars_per_line: int = 42, max_lines: int =
     Each segment will have at most max_lines lines,
     with each line having at most max_chars_per_line characters.
     Splits on word boundaries.
+    
+    Default values follow broadcast captioning standards:
+    - BBC Subtitle Guidelines: max 37 chars/line
+      https://www.bbc.co.uk/accessibility/forproducts/guides/subtitles/
+    - Netflix Timed Text Style Guide: 42 chars/line for English
+      https://partnerhelp.netflixstudios.com/hc/en-us/articles/215758617
+    - DCMP Captioning Key: 32 chars/line, 2 lines max
+      https://dcmp.org/learn/captioningkey
+    
+    We use 42 chars (Netflix standard) as default for readability on
+    modern displays while staying within professional guidelines.
     """
     words = text.split()
     segments = []
@@ -370,6 +381,18 @@ def generate_srt_file(
     
     Long captions are automatically split into multiple segments
     with timing distributed proportionally based on text length.
+    
+    Timing considerations follow reading speed guidelines:
+    - Average reading speed: 150-180 words/minute (W3C WCAG)
+      https://www.w3.org/WAI/media/av/captions/
+    - Minimum caption duration: 1 second (FCC guidelines)
+    - We use 500ms minimum per segment to allow for split captions
+      while maintaining readability when segments are short.
+    
+    SRT format specification:
+    - SubRip text file format (.srt)
+    - Timestamps: HH:MM:SS,mmm --> HH:MM:SS,mmm
+    - Blank line separates entries
     """
     
     def ms_to_srt_time(ms: int) -> str:
