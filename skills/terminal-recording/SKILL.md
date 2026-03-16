@@ -352,8 +352,93 @@ vhs pr-demo.tape --publish
 # ![Demo](https://vhs.charm.sh/vhs-xxxxx.gif)
 ```
 
+## AI Narrated Demos (Advanced)
+
+Create professional narrated terminal demos with AI voice over using ElevenLabs TTS.
+
+### Narration Macros
+
+Add special comment macros to your tape file:
+
+```tape
+Output demo.mp4
+Set Theme "Dracula"
+
+# @voice eleven:adam
+
+# @narrate:before "Welcome to this CLI demo."
+Type "echo hello"
+Enter
+Sleep 1s
+
+# @narrate:during "Watch as we list the directory."
+Type "ls -la"
+Enter
+Sleep 2s
+
+# @narrate:after "Great! Now let's clean up."
+Type "rm temp.txt"
+Enter
+
+# @narrate:wait
+```
+
+### Narration Modes
+
+| Macro | Behavior |
+|-------|----------|
+| `@voice eleven:<name>` | Set ElevenLabs voice (adam, rachel, josh, etc.) |
+| `@narrate:before "text"` | Speak first, then run action |
+| `@narrate:during "text"` | Speak while action runs |
+| `@narrate:after "text"` | Run action, then speak |
+| `@narrate:wait` | Sync point - wait for all speech to complete |
+
+### Workflow
+
+```bash
+# 1. Write tape with narration macros
+vim demo.tape
+
+# 2. Generate audio & compile tape (requires ELEVENLABS_API_KEY)
+python scripts/narrated_tape.py demo.tape --output-dir ./build
+
+# 3. Render video with VHS
+vhs build/demo_compiled.tape
+# Or via Docker:
+docker run --rm -v $PWD/build:/vhs ghcr.io/charmbracelet/vhs /vhs/demo_compiled.tape
+
+# 4. Mix audio with video
+bash build/mix_audio.sh
+
+# Result: build/demo_final.mp4 with AI narration!
+```
+
+### One-Command Build
+
+```bash
+python scripts/narrated_tape.py demo.tape --render --mix
+```
+
+### Available Voices
+
+| Voice | Style |
+|-------|-------|
+| adam | Young American male |
+| rachel | Calm female |
+| josh | Deep male |
+| bella | Soft female |
+| antoni | Warm male |
+
+### Requirements
+
+- `ELEVENLABS_API_KEY` environment variable
+- Python 3.8+ with `requests`
+- ffmpeg and ffprobe
+- VHS (or Docker image)
+
 ## Additional Resources
 
 - [VHS GitHub Repository](https://github.com/charmbracelet/vhs)
 - [VHS Themes](https://github.com/charmbracelet/vhs/blob/main/THEMES.md)
 - [VHS Examples](https://github.com/charmbracelet/vhs/tree/main/examples)
+- [ElevenLabs Voices](https://elevenlabs.io/voice-library)
