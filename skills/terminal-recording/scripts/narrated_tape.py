@@ -319,8 +319,58 @@ def calculate_timings(
     return compiled_lines, audio_manifest
 
 
-def generate_srt_file(audio_manifest: list[dict], output_path: Path) -> None:
-    """Generate SRT subtitle file from audio manifest."""
+def split_caption_text(text: str, max_chars_per_line: int = 42, max_lines: int = 2) -> list[str]:
+    """
+    Split long caption text into readable segments.
+    
+    Each segment will have at most max_lines lines,
+    with each line having at most max_chars_per_line characters.
+    Splits on word boundaries.
+    """
+    words = text.split()
+    segments = []
+    current_segment_lines = []
+    current_line = ""
+    
+    for word in words:
+        # Check if adding this word exceeds line length
+        test_line = f"{current_line} {word}".strip()
+        
+        if len(test_line) <= max_chars_per_line:
+            current_line = test_line
+        else:
+            # Line is full, start new line
+            if current_line:
+                current_segment_lines.append(current_line)
+            
+            # Check if segment is full (max_lines reached)
+            if len(current_segment_lines) >= max_lines:
+                segments.append("\n".join(current_segment_lines))
+                current_segment_lines = []
+            
+            current_line = word
+    
+    # Don't forget the last line
+    if current_line:
+        current_segment_lines.append(current_line)
+    if current_segment_lines:
+        segments.append("\n".join(current_segment_lines))
+    
+    return segments if segments else [text]
+
+
+def generate_srt_file(
+    audio_manifest: list[dict],
+    output_path: Path,
+    max_chars_per_line: int = 42,
+    max_lines: int = 2
+) -> None:
+    """
+    Generate SRT subtitle file from audio manifest.
+    
+    Long captions are automatically split into multiple segments
+    with timing distributed proportionally based on text length.
+    """
     
     def ms_to_srt_time(ms: int) -> str:
         """Convert milliseconds to SRT timestamp format (HH:MM:SS,mmm)."""
@@ -337,15 +387,47 @@ def generate_srt_file(audio_manifest: list[dict], output_path: Path) -> None:
         if not segment.get('text'):
             continue
         
+        text = segment['text']
         start_ms = segment['start_ms']
-        end_ms = start_ms + segment['duration_ms']
+        total_duration_ms = segment['duration_ms']
         
-        srt_content.append(f"{subtitle_index}")
-        srt_content.append(f"{ms_to_srt_time(start_ms)} --> {ms_to_srt_time(end_ms)}")
-        srt_content.append(segment['text'])
-        srt_content.append("")  # Blank line between entries
+        # Split long text into readable caption segments
+        caption_segments = split_caption_text(text, max_chars_per_line, max_lines)
         
-        subtitle_index += 1
+        if len(caption_segments) == 1:
+            # Simple case: text fits in one caption
+            end_ms = start_ms + total_duration_ms
+            srt_content.append(f"{subtitle_index}")
+            srt_content.append(f"{ms_to_srt_time(start_ms)} --> {ms_to_srt_time(end_ms)}")
+            srt_content.append(caption_segments[0])
+            srt_content.append("")
+            subtitle_index += 1
+        else:
+            # Distribute timing across segments proportionally by character count
+            total_chars = sum(len(seg.replace("\n", " ")) for seg in caption_segments)
+            current_start = start_ms
+            
+            for i, cap_text in enumerate(caption_segments):
+                # Proportional duration based on character count
+                char_count = len(cap_text.replace("\n", " "))
+                segment_duration = int(total_duration_ms * char_count / total_chars)
+                
+                # Ensure minimum duration of 500ms per segment
+                segment_duration = max(segment_duration, 500)
+                
+                # Last segment gets remaining time
+                if i == len(caption_segments) - 1:
+                    end_ms = start_ms + total_duration_ms
+                else:
+                    end_ms = current_start + segment_duration
+                
+                srt_content.append(f"{subtitle_index}")
+                srt_content.append(f"{ms_to_srt_time(current_start)} --> {ms_to_srt_time(end_ms)}")
+                srt_content.append(cap_text)
+                srt_content.append("")
+                
+                subtitle_index += 1
+                current_start = end_ms
     
     output_path.write_text("\n".join(srt_content))
 
