@@ -272,6 +272,47 @@ Enter
 
 ## Troubleshooting
 
+### OpenHands PS1JSON Prompt Artifacts
+
+When recording from an OpenHands environment, you may see JSON output like this in your recordings:
+
+```
+###PS1JSON###
+{
+  "pid": "",
+  "exit_code": "0",
+  "username": "\u",
+  ...
+}
+###PS1END###
+```
+
+This is OpenHands' shell state tracking prompt. **To fix this:**
+
+1. **Use bash instead of zsh** - bash doesn't have the precmd hooks that output PS1JSON
+2. **Clear the prompt in a hidden setup block:**
+
+```tape
+Output demo.gif
+Set Shell "bash"
+
+# Clear prompt artifacts before showing output
+Hide
+Type "export PS1='$ ' && export PROMPT_COMMAND='' && unset -f precmd preexec 2>/dev/null; clear"
+Enter
+Sleep 300ms
+Type "cd /path/to/project"
+Enter
+Sleep 500ms
+Show
+
+# Your actual demo starts here
+Type "your-command"
+Enter
+```
+
+This ensures a clean `$ ` prompt with no tracking output visible in recordings.
+
 ### VHS Not Found
 ```bash
 export PATH=$PATH:$(go env GOPATH)/bin
