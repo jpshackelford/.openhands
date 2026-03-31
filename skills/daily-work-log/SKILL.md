@@ -86,32 +86,101 @@ The finish message often summarizes what was accomplished and what remains.
 | `ACTION` | Agent tool calls |
 | `OBSERVATION` | Tool results |
 
-## Step 3: Present Summary Table
+## Step 3: Identify External Actions (What Escaped the Sandbox?)
+
+**Critical question**: The sandbox is ephemeral. What work was saved outside of it?
+
+Scan the conversation events for actions that persisted work externally:
+
+```bash
+# Get all actions to analyze what was done
+curl -s "https://app.all-hands.dev/api/v1/conversations/{conversation_id}/events?kind__eq=ACTION&sort_order=TIMESTAMP_ASC" \
+  -H "Authorization: Bearer $OH_API_KEY"
+```
+
+### External Actions to Look For
+
+| Category | Actions | Evidence |
+|----------|---------|----------|
+| **Git** | `git push`, `git commit` | Branch pushed, commits made |
+| **GitHub** | PR created/updated, issue created/commented | API calls to github.com |
+| **Notion** | Page created/updated | `notion.post_page`, `notion.update_a_block` |
+| **Slack** | Message sent | `slack_send_message` |
+| **Linear** | Issue created/updated | `linear.save_issue` |
+| **File uploads** | Gists, attachments | `gh gist create`, attachment APIs |
+
+### What This Tells You
+
+- **External actions found** → Work is preserved, can verify it exists
+- **No external actions** → Work only exists in sandbox (may need retrieval)
+- **Partial actions** → Some work saved, some may be lost
+
+### Quick Analysis Script
+
+```bash
+curl -s "https://app.all-hands.dev/api/v1/conversations/{id}/events?kind__eq=ACTION" \
+  -H "Authorization: Bearer $OH_API_KEY" | python3 -c "
+import json, sys
+data = json.load(sys.stdin)
+external_actions = []
+for item in data.get('items', []):
+    action = item.get('action', {})
+    tool = item.get('tool_name', '')
+    
+    # Check for external actions
+    if tool in ['terminal']:
+        cmd = action.get('command', '')
+        if any(x in cmd for x in ['git push', 'gh pr', 'gh issue', 'curl -X POST', 'curl -X PUT']):
+            external_actions.append(f'Terminal: {cmd[:80]}...')
+    elif tool in ['default_create_pr', 'default_create_mr']:
+        external_actions.append(f'PR created')
+    elif 'notion' in tool:
+        external_actions.append(f'Notion: {tool}')
+    elif 'slack' in tool:
+        external_actions.append(f'Slack: {tool}')
+    elif 'linear' in tool:
+        external_actions.append(f'Linear: {tool}')
+
+if external_actions:
+    print('External actions found:')
+    for a in external_actions:
+        print(f'  - {a}')
+else:
+    print('No external actions found - work may only exist in sandbox')
+"
+```
+
+## Step 4: Present Summary Table
 
 ```
-| # | Title | Intent Summary | Duration | Status |
-|---|-------|----------------|----------|--------|
-| 1 | PR Review | Review PR #2334 comments | 45 min | ? |
-| 2 | Research | Compare OpenAI vs OpenHands plugins | 30 min | ? |
+| # | Title | Goal | External Output | Status |
+|---|-------|------|-----------------|--------|
+| 1 | PR Review | Fix test failures | PR #2334 updated | ✅ |
+| 2 | Research | Compare plugins | None (file in sandbox) | 📁 |
+| 3 | Slack thread | Draft GitHub issue | Issue #19 created | ✅ |
 ```
 
-## Step 4: Verification Questions
+## Step 5: Verification Questions
 
 For each conversation, determine:
 
-1. **Delivery**: Was work delivered outside sandbox? (GitHub PR, Notion page, Slack message, etc.)
-2. **Status**: Complete, pending follow-up, or informational only?
-3. **Files**: Any sandbox files that should be preserved?
+1. **External Output**: What was saved outside the sandbox? (PR, issue, Notion page, Slack message, etc.)
+2. **Sandbox Files**: Any valuable files that exist only in the sandbox?
+3. **Completion**: Is the user's goal fully achieved, or is follow-up needed?
 
-Categories:
-- ✅ **Done** - Work complete and delivered
-- 🔄 **Pending** - Needs follow-up action
-- ℹ️ **Informational** - Lookup/research, no action needed
-- 📁 **Has Files** - Sandbox contains files to preserve
+### Categories
+
+| Status | Meaning | Action |
+|--------|---------|--------|
+| ✅ **Done** | Work complete AND delivered externally | Document with links |
+| 🔄 **Pending** | Started but needs follow-up | Note next steps |
+| 📁 **Retrieve** | Valuable work only in sandbox | Resume sandbox, save content |
+| ℹ️ **Info** | Lookup/research, no output expected | Brief note only |
+| ⚠️ **Lost?** | Work done but no external save | May need to redo |
 
 ---
 
-## Step 5: Create Notion Work Log Page
+## Step 6: Create Notion Work Log Page
 
 ### Page Structure
 
@@ -193,7 +262,7 @@ Use `update_a_block` with rich_text containing links:
 
 ---
 
-## Step 6: Retrieve Files from Paused Sandboxes
+## Step 7: Retrieve Files from Paused Sandboxes
 
 If a conversation has files that need to be preserved:
 
