@@ -1,6 +1,6 @@
 ---
 name: daily-work-log
-description: Analyze OpenHands conversations from the day and create a Notion work log page with completed work, pending items, and preserved sandbox files.
+description: Analyze OpenHands conversations, Slack messages, and GitHub activity from the day to create a structured Notion work log page with standup items, completed work, work in process, and categorized follow-up actions.
 triggers:
   - work log
   - daily log
@@ -9,40 +9,45 @@ triggers:
   - analyze conversations
   - notion work log
   - end of day summary
+  - what did I work on
 ---
 
 # Daily Work Log Analysis
 
-This skill helps you analyze your OpenHands conversations from the day and create a structured Notion work log page.
+This skill helps you analyze your day's work across multiple sources (Slack, GitHub, OpenHands conversations) and create a structured Notion work log page.
 
 ## Quick Start
 
 ```
-Analyze my OpenHands conversations from today and create a private Notion work log page.
+Analyze my work from today and create a Notion work log page.
 ```
+
+## Data Sources
+
+The skill gathers information from multiple sources to build a complete picture:
+
+| Source | What It Provides |
+|--------|------------------|
+| **Slack** | Standup posts, discussions, commitments made, help requested |
+| **GitHub** | PRs/issues touched, reviews done, comments made |
+| **OpenHands** | Detailed work done, files created, external actions taken |
+| **Calendar/Meetings** | Context for discussions (user provides) |
 
 ## Process Overview
 
-1. **Gather GitHub activity** - PRs and issues touched today (provides external context)
-2. **Retrieve conversations** from today via OpenHands API
-3. **Extract intent** from first human message of each
-4. **Cross-reference** GitHub activity with conversations
-5. **Present summary table** for user review
-6. **Ask verification questions** about completion status
-7. **Create Notion page** with categorized work items
-8. **Retrieve sandbox files** if needed and create subpages
+1. **Determine timezone and target date**
+2. **Gather Slack activity** - Standup posts, messages sent, commitments made
+3. **Gather GitHub activity** - PRs and issues touched (external verification)
+4. **Retrieve OpenHands conversations** from the day
+5. **Extract intent** from human messages in each conversation
+6. **Cross-reference** all sources to build complete picture
+7. **Present summary** for user review and categorization
+8. **Create Notion page** with structured sections
+9. **Retrieve sandbox files** if needed and create subpages
 
 ---
 
-## Step 0: Gather GitHub Activity
-
-**Why do this first?** GitHub PRs and issues provide external verification of work done. By gathering this before analyzing conversations, you can:
-- Cross-reference conversation claims with actual PR/issue activity
-- Identify work done outside of OpenHands (direct GitHub work)
-- Get accurate links and statuses for the work log
-- Spot conversations that created PRs but didn't mention them clearly
-
-### Determine Target Date
+## Step 0: Determine Timezone and Target Date
 
 Ask the user for their timezone. For US timezones:
 - **Eastern (ET)**: UTC-5 (EST) or UTC-4 (EDT)
@@ -51,6 +56,71 @@ Ask the user for their timezone. For US timezones:
 - **Pacific (PT)**: UTC-8 (PST) or UTC-7 (PDT)
 
 Use the appropriate date for "yesterday" or "today" based on their timezone.
+
+---
+
+## Step 1: Gather Slack Activity
+
+**Why Slack first?** Slack messages reveal:
+- What the user committed to in standup
+- Discussions that provide context for work done
+- Promises made ("I'll do X", "Let me check on Y")
+- Help requested from others
+
+### Search for User's Messages
+
+Use the Slack MCP tools to search for messages sent by the user:
+
+```
+slack_search_public(
+  query="from:@me",
+  sort="timestamp",
+  sort_dir="asc"
+)
+```
+
+For a specific date range, use date modifiers:
+```
+query="from:@me after:2026-03-29 before:2026-03-31"
+```
+
+### What to Extract from Slack
+
+| Type | How to Identify | Use in Work Log |
+|------|-----------------|-----------------|
+| **Standup posts** | Morning message with plans/commitments | → 📅 Standup Items table |
+| **Status updates** | EOD messages, progress reports | → ✅ Completed Work |
+| **Commitments made** | "I'll do X", "Let me handle Y" | → 🔄 Follow-up Actions |
+| **Help requested** | Questions asked, assistance sought | → Note in relevant section |
+| **Help provided** | Answering others' questions | → 🔧 Other Work |
+| **Discussions** | Threads about technical topics | → Context for GitHub/OpenHands work |
+
+### Identify Standup Items
+
+Look for patterns like:
+- Messages in #standup or similar channels
+- Morning messages listing planned work
+- Bulleted/numbered lists of tasks
+
+Extract each item to track against actual completion.
+
+### Identify Commitments and Follow-ups
+
+Scan messages for language indicating commitments:
+- "I'll...", "I will...", "Let me..."
+- "I can help with...", "I'll take a look at..."
+- "Following up on...", "Still working on..."
+- Responses to requests that imply action
+
+---
+
+## Step 2: Gather GitHub Activity
+
+**Why GitHub?** GitHub PRs and issues provide external verification of work done:
+- Cross-reference conversation claims with actual PR/issue activity
+- Identify work done outside of OpenHands (direct GitHub work)
+- Get accurate links and statuses for the work log
+- Spot conversations that created PRs but didn't mention them clearly
 
 ### Get GitHub Username
 
@@ -199,7 +269,7 @@ This gives you a verified list of external outputs to cross-reference with conve
 
 ---
 
-## Step 1: List Today's Conversations
+## Step 3: List Today's OpenHands Conversations
 
 ```bash
 curl -s "https://app.all-hands.dev/api/v1/app-conversations?limit=50&sort_by=created_at&sort_order=desc" \
@@ -209,7 +279,7 @@ curl -s "https://app.all-hands.dev/api/v1/app-conversations?limit=50&sort_by=cre
 
 Filter results for today's date by checking `created_at` timestamps.
 
-## Step 2: Extract Intent from Each Conversation
+## Step 4: Extract Intent from Each Conversation
 
 **Important**: A single message rarely tells the full story. Retrieve ALL human messages to understand the user's evolving goal:
 
@@ -253,7 +323,7 @@ The finish message often summarizes what was accomplished and what remains.
 | `ACTION` | Agent tool calls |
 | `OBSERVATION` | Tool results |
 
-## Step 3: Identify External Actions (What Escaped the Sandbox?)
+## Step 5: Identify External Actions (What Escaped the Sandbox?)
 
 **Critical question**: The sandbox is ephemeral. What work was saved outside of it?
 
@@ -317,7 +387,7 @@ else:
 "
 ```
 
-## Step 4: Cross-Reference and Present Summary
+## Step 6: Cross-Reference and Present Summary
 
 Combine GitHub activity with conversation analysis to create a complete picture.
 
@@ -350,7 +420,7 @@ Flag these for user attention:
 - **Conversation claiming PR/issue not in GitHub**: May have failed, or PR is in different org
 - **Conversation with no external output**: May need sandbox file retrieval
 
-## Step 5: Verification Questions
+## Step 7: Verification Questions
 
 For each conversation, determine:
 
@@ -370,9 +440,11 @@ For each conversation, determine:
 
 ---
 
-## Step 6: Create Notion Work Log Page
+## Step 8: Create Notion Work Log Page
 
 ### Page Structure
+
+The final page structure organizes work into clear sections:
 
 ```markdown
 # Work Log - [Date]
@@ -380,6 +452,46 @@ For each conversation, determine:
 Summary of OpenHands conversations and work accomplished today.
 
 ---
+
+## 📅 Standup Items
+Items from morning standup post ([time]):
+
+| Item | Status | GitHub Link | Notes |
+|------|--------|-------------|-------|
+| [Standup commitment 1] | ✅ | [#123](url) | Completed |
+| [Standup commitment 2] | ⏳ Follow-up | | Waiting on X |
+
+## 🔧 Other Work
+Work done that wasn't in standup:
+
+| Item | Status | GitHub Link | Notes |
+|------|--------|-------------|-------|
+| [Ad-hoc task 1] | ✅ | [#456](url) | Description |
+| [Research task] | ⏳ Follow-up | | Not yet organized |
+
+## 🔄 Follow-up Actions
+
+### Carry-over Items
+Items ongoing from before today:
+
+| Action | Due/Next Step |
+|--------|---------------|
+| [Ongoing task 1] | When X happens |
+| [Ongoing task 2] | This week |
+
+### New Items (from [Date])
+New follow-ups identified today:
+
+| Action | Owner | Due/Next Step |
+|--------|-------|---------------|
+| [New commitment 1] | [Name] | This week |
+| [New commitment 2] | [Name] | Before [date] |
+
+### GitHub Issues & PRs Requiring My Action
+
+| Issue/PR | Title | Repository | Next Step |
+|----------|-------|------------|-----------|
+| [#2334](url) | fix(terminal): filter... | software-agent-sdk | Get reviewed and merged |
 
 ## ✅ Completed Work
 
@@ -390,29 +502,72 @@ Link: [PR/Issue/Page](https://...)
 
 Status: ✅ Complete
 
+## 🔄 Work in Process
+
+### 1. [Task Name]
+[Description of ongoing work]
+
+Link: [relevant links]
+
+## GitHub Issues & PRs
 ---
+Detailed reference section for all GitHub activity:
 
-## 📋 [Special Category]
-(For major collaborative work like roadmap updates)
+### 1. [PR/Issue Title]
+[Full description of work done]
 
----
+Link: [PR #123](url)
+Status: ✅ Complete / ⏳ In Progress
 
-## 🔄 Pending / Follow-up
+## Communications
+[Things learned and shared with others]
 
-1. [Task](https://conversation-link) - [what needs to happen]
-2. [Task] - [next steps]
-
----
-
-## ℹ️ Informational Lookups
-
-• [Quick lookup 1]
-• [Quick lookup 2]
+## Meetings
+- [Meeting 1]
+- [Meeting 2]
 
 ---
 
 *Generated: [timestamp] via OpenHands conversation analysis*
 ```
+
+### Section Purposes
+
+| Section | Purpose |
+|---------|---------|
+| **📅 Standup Items** | Track completion of morning commitments |
+| **🔧 Other Work** | Capture ad-hoc work not planned in standup |
+| **🔄 Follow-up Actions** | Consolidated view of all pending items |
+| **├─ Carry-over Items** | Ongoing from previous days |
+| **├─ New Items** | New commitments made today |
+| **└─ GitHub PRs/Issues** | PRs/issues needing your action |
+| **✅ Completed Work** | Detailed descriptions of finished work |
+| **🔄 Work in Process** | Started but not complete |
+| **GitHub Issues & PRs** | Reference section with full details |
+| **Communications** | Knowledge sharing |
+| **Meetings** | Meeting notes/attendees |
+
+### Categorizing Follow-up Items
+
+When creating the Follow-up Actions section, split items into:
+
+**Carry-over Items** - Ongoing from before today:
+- Items mentioned as "still pending" or "continuing"
+- Recurring responsibilities
+- Items waiting on external dependencies
+- Use 2-column table (Action, Due/Next Step) - owner is implicit
+
+**New Items from [Date]** - Identified today:
+- New commitments made in conversations
+- Action items from meetings
+- New tasks discovered during work
+- Use 3-column table (Action, Owner, Due/Next Step) when multiple people involved
+
+**GitHub Issues & PRs Requiring My Action** - PRs/issues needing your next step:
+- Always include Title column for quick scanning
+- Link the issue/PR number
+- Include repository name
+- Describe the specific next step needed
 
 ### Creating with Markdown
 
@@ -452,7 +607,7 @@ Use `update_a_block` with rich_text containing links:
 
 ---
 
-## Step 7: Retrieve Files from Paused Sandboxes
+## Step 9: Retrieve Files from Paused Sandboxes
 
 If a conversation has files that need to be preserved:
 
@@ -543,27 +698,71 @@ https://app.all-hands.dev/api/v1/
 ## Example Session
 
 ```
-User: "List my OpenHands conversations from today"
+User: "I'm in Eastern timezone. What did I work on yesterday? Create a work log."
 
-Agent: [Presents numbered table with titles, intents, durations]
+Agent: "I'll gather your activity from March 30. Let me check Slack, GitHub, and OpenHands..."
 
-User: "Status: #1 done, #2 has a report file I need, #3 was just a lookup"
+Agent: [Searches Slack for user's messages]
+       "Found your standup post at 7:46 AM with 6 items, plus several other messages."
 
-Agent: "I'll create the work log. For #2, what's the file path?"
+Agent: [Queries GitHub for PRs/issues]
+       "Found 5 PRs authored/updated and 2 issues you were involved with."
 
-User: "/workspace/project/report.md"
+Agent: [Lists OpenHands conversations]
+       "Found 8 conversations from yesterday."
 
-Agent: [Creates Notion page, resumes sandbox #2, retrieves file, creates subpage]
+Agent: "Here's what I found:
 
-Agent: "Done! Here's your work log: [Notion link]"
+## Summary for March 30
+
+### Standup Items (from Slack)
+| Item | Matched To |
+|------|------------|
+| JPMC v1 upgrade check-in | Conv #3, GitHub discussions |
+| AMD prospect call | ✅ Meeting (no OpenHands) |
+| Self-hosted backlog | Conv #5, Notion updates |
+
+### GitHub Activity
+| PR/Issue | Title | Role |
+|----------|-------|------|
+| #2334 | fix(terminal): filter... | author |
+| #2447 | Laminar custom ports | reviewer |
+
+### OpenHands Conversations
+| # | Intent | External Output |
+|---|--------|-----------------|
+| 1 | PR review fix | PR #2334 pushed |
+| 2 | Plugin comparison | (sandbox file) |
+| 3 | Self-hosted roadmap | Notion page updated |
+
+What's the status of each? Any files to retrieve from #2?"
+
+User: "#1 and #3 done. #2 has a report I want to save. Also add the Tech Council 
+presentation to follow-ups - I committed to that in a meeting."
+
+Agent: [Creates Notion page with full structure]
+       [Resumes sandbox #2, retrieves report.md, creates subpage]
+
+Agent: "Done! Work log created with:
+- 6 standup items tracked
+- 3 GitHub PRs documented  
+- Follow-up actions split into carry-over vs new items
+- Report saved as subpage
+
+View: [Notion link]"
 ```
 
 ---
 
 ## Tips
 
-1. **Run at end of day** for complete picture
-2. **Check sandbox_status** before trying to resume - may already be running
-3. **Use markdown field** for Notion pages - much easier than building block arrays
-4. **Link conversations** in pending items so you can resume them easily
-5. **Create subpages** for long content rather than cramming into main page
+1. **Ask for timezone first** - Critical for accurate date filtering
+2. **Start with Slack** - Standup posts provide structure for the whole log
+3. **Cross-reference sources** - GitHub verifies claims, conversations provide detail
+4. **Split follow-ups** - Carry-over (ongoing) vs New (from today) helps prioritize
+5. **Include PR titles** - Makes the GitHub table scannable at a glance
+6. **Run at end of day** for complete picture
+7. **Check sandbox_status** before trying to resume - may already be running
+8. **Use markdown field** for Notion pages - much easier than building block arrays
+9. **Link conversations** in pending items so you can resume them easily
+10. **Create subpages** for long content rather than cramming into main page
