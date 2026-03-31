@@ -28,22 +28,24 @@ The skill gathers information from multiple sources to build a complete picture:
 
 | Source | What It Provides |
 |--------|------------------|
-| **Slack** | Standup posts, discussions, commitments made, help requested |
+| **Slack** | Standup posts, discussions, commitments made, help requested, message count |
 | **GitHub** | PRs/issues touched, reviews done, comments made |
 | **OpenHands** | Detailed work done, files created, external actions taken |
-| **Calendar/Meetings** | Context for discussions (user provides) |
+| **Calendar (iCal)** | Meeting schedule with times, organizers, and participants |
 
 ## Process Overview
 
 1. **Determine timezone and target date**
-2. **Gather Slack activity** - Standup posts, messages sent, commitments made
+2. **Gather Slack activity** - Standup posts, messages sent, commitments made, message count
 3. **Gather GitHub activity** - PRs and issues touched (external verification)
-4. **Retrieve OpenHands conversations** from the day
-5. **Extract intent** from human messages in each conversation
-6. **Cross-reference** all sources to build complete picture
-7. **Present summary** for user review and categorization
-8. **Create Notion page** with structured sections
-9. **Retrieve sandbox files** if needed and create subpages
+4. **Gather calendar data** - Meetings from iCal feed
+5. **Retrieve OpenHands conversations** from the day
+6. **Extract intent** from human messages in each conversation
+7. **Cross-reference** all sources to build complete picture
+8. **Identify communications** - Things learned/shared not captured elsewhere
+9. **Present summary** for user review and categorization
+10. **Create Notion page** with structured sections
+11. **Retrieve sandbox files** if needed and create subpages
 
 ---
 
@@ -112,9 +114,130 @@ Scan messages for language indicating commitments:
 - "Following up on...", "Still working on..."
 - Responses to requests that imply action
 
+### Count Total Messages
+
+Track the total number of messages sent and break down by channel:
+
+```
+slack_search_public_and_private(
+  query="from:<@USER_ID> on:YYYY-MM-DD",
+  limit=20,
+  include_context=false,
+  response_format="concise"
+)
+```
+
+Continue paginating until no more results. Provide summary like:
+
+```
+**You sent 20 Slack messages on March 30, 2026.**
+
+Breakdown by channel:
+- **#forward-deployed-engineering**: 4 messages
+- **#proj-self-hosted**: 3 messages
+- **DM with Robert**: 3 messages
+- ...
+```
+
 ---
 
-## Step 2: Gather GitHub Activity
+## Step 2: Gather Calendar Data (iCal)
+
+**Why Calendar?** Meetings provide context for discussions and account for time spent:
+- Shows which meetings you attended
+- Identifies who you met with
+- Accounts for time not captured in Slack/GitHub/OpenHands
+
+### Fetch Calendar Data
+
+If the user provides an iCal URL (via secret or directly):
+
+```bash
+curl -s "$ICAL_SECRET_ADDR" > /tmp/calendar.ics
+```
+
+### Parse with Python
+
+```python
+from icalendar import Calendar
+from datetime import datetime, date
+import pytz
+
+TARGET_DATE = date(2026, 3, 30)
+TZ = pytz.timezone('America/New_York')
+
+with open('/tmp/calendar.ics', 'rb') as f:
+    cal = Calendar.from_ical(f.read())
+
+meetings = []
+for component in cal.walk():
+    if component.name == "VEVENT":
+        start = component.get('dtstart').dt
+        end = component.get('dtend')
+        summary = str(component.get('summary', 'No Title'))
+        attendees = component.get('attendee', [])
+        organizer = component.get('organizer')
+        
+        # Filter to target date
+        if isinstance(start, datetime):
+            start = start.astimezone(TZ)
+            event_date = start.date()
+        else:
+            event_date = start
+            
+        if event_date == TARGET_DATE:
+            # Calculate duration
+            duration_mins = None
+            if end:
+                end_dt = end.dt
+                if isinstance(end_dt, datetime):
+                    end_dt = end_dt.astimezone(TZ)
+                    duration_mins = int((end_dt - start).total_seconds() / 60)
+            
+            # Format time WITHOUT leading zeros: "1:00 PM" not "01:00 PM"
+            time_str = start.strftime('%-I:%M %p') if isinstance(start, datetime) else "All day"
+            duration_str = f"({duration_mins} mins)" if duration_mins else ""
+            
+            # Get organizer name
+            org_name = ""
+            if organizer:
+                org_email = str(organizer).replace('mailto:', '')
+                org_name = org_email.split('@')[0]
+                # Use "(external)" or "(recurring)" for cryptic calendar IDs
+                if org_name.startswith('c_'):
+                    org_name = "(recurring)" if "recurring" in summary.lower() else "(external)"
+            
+            # Get participant list (excluding organizer)
+            participants = []
+            if attendees:
+                for a in (attendees if isinstance(attendees, list) else [attendees]):
+                    email = str(a).replace('mailto:', '')
+                    name = email.split('@')[0]
+                    if name != org_name:
+                        participants.append(name)
+            
+            meetings.append({
+                'summary': summary,
+                'time': f"{time_str} {duration_str}",
+                'organizer': org_name,
+                'participants': ', '.join(participants[:4]) + (f" +{len(participants)-4} more" if len(participants) > 4 else "")
+            })
+```
+
+### Meetings Table Format
+
+| Meeting | Time | Organizer | Participants |
+|---------|------|-----------|--------------|
+| FDE Team Interview - Chris Nelson | 11:00 AM (45 mins) | (external) | john-mason, alona |
+| OpenHands all hands | 12:00 PM (30 mins) | robert | john-mason, openhands-staff, cliff.yang |
+| Engineering Office Hours | 1:00 PM (60 mins) | (recurring) | ash, john-mason, engineering-team +2 more |
+| Quick Huddle - McAfee | 2:00 PM (15 mins) | clarke | john-mason, calvin, rajiv.shah |
+
+**Time format**: `H:MM AM/PM (NN mins)` - no leading zeros on the hour.
+
+---
+
+## Step 3: Gather GitHub Activity
 
 **Why GitHub?** GitHub PRs and issues provide external verification of work done:
 - Cross-reference conversation claims with actual PR/issue activity
@@ -269,7 +392,7 @@ This gives you a verified list of external outputs to cross-reference with conve
 
 ---
 
-## Step 3: List Today's OpenHands Conversations
+## Step 4: List Today's OpenHands Conversations
 
 ```bash
 curl -s "https://app.all-hands.dev/api/v1/app-conversations?limit=50&sort_by=created_at&sort_order=desc" \
@@ -279,7 +402,7 @@ curl -s "https://app.all-hands.dev/api/v1/app-conversations?limit=50&sort_by=cre
 
 Filter results for today's date by checking `created_at` timestamps.
 
-## Step 4: Extract Intent from Each Conversation
+## Step 5: Extract Intent from Each Conversation
 
 **Important**: A single message rarely tells the full story. Retrieve ALL human messages to understand the user's evolving goal:
 
@@ -323,7 +446,7 @@ The finish message often summarizes what was accomplished and what remains.
 | `ACTION` | Agent tool calls |
 | `OBSERVATION` | Tool results |
 
-## Step 5: Identify External Actions (What Escaped the Sandbox?)
+## Step 6: Identify External Actions (What Escaped the Sandbox?)
 
 **Critical question**: The sandbox is ephemeral. What work was saved outside of it?
 
@@ -387,7 +510,7 @@ else:
 "
 ```
 
-## Step 6: Cross-Reference and Present Summary
+## Step 7: Cross-Reference and Present Summary
 
 Combine GitHub activity with conversation analysis to create a complete picture.
 
@@ -420,7 +543,29 @@ Flag these for user attention:
 - **Conversation claiming PR/issue not in GitHub**: May have failed, or PR is in different org
 - **Conversation with no external output**: May need sandbox file retrieval
 
-## Step 7: Verification Questions
+### Identify Communications Content
+
+After cross-referencing, identify Slack messages that are NOT accounted for in other sections:
+
+**These belong in Communications:**
+- Advice given to others (not tied to a specific deliverable)
+- Knowledge shared (commit history, context, confirmations)
+- Things learned from others (articles, tips, discussions)
+- Discussions that don't result in action items
+
+**These belong elsewhere:**
+- Standup posts → 📅 Standup Items
+- Commitments made → 🔄 Follow-up Actions
+- Work discussions → Notes in relevant sections
+- Help provided on a tracked item → Notes in that item's section
+
+Split into two categories:
+- **Shared**: Things you provided to others
+- **Learned**: New information you received
+
+---
+
+## Step 8: Verification Questions
 
 For each conversation, determine:
 
@@ -440,7 +585,7 @@ For each conversation, determine:
 
 ---
 
-## Step 8: Create Notion Work Log Page
+## Step 9: Create Notion Work Log Page
 
 ### Page Structure
 
@@ -520,11 +665,35 @@ Link: [PR #123](url)
 Status: ✅ Complete / ⏳ In Progress
 
 ## Communications
-[Things learned and shared with others]
+
+Conversations not captured in other sections:
+
+### Shared
+- Advised Rajiv on McAfee self-hosted deployment - Recommended front-loading connectivity validation before kickoff to avoid delays.
+- Shared commit history context (#proj-self-hosted) - Referenced [September commit](url) about chart README changes.
+- Confirmed self-hosted customer list (#proj-self-hosted) - Verified with Alona that JPMC, C3.ai, Lynx, Archipelago, Werfen are tracked.
+
+### Learned
+- Claude Code power-user tips (#competition) - Clarke shared Boris Cherny's thread with advanced features: /branch, /btw, git worktrees, /batch, --bare, etc.
+
+**You sent 20 Slack messages on March 30, 2026.**
+
+Breakdown by channel:
+- **#forward-deployed-engineering**: 4 messages
+- **#proj-self-hosted**: 3 messages
+- **DM with Robert**: 3 messages
+- ...
 
 ## Meetings
-- [Meeting 1]
-- [Meeting 2]
+
+| Meeting | Time | Organizer | Participants |
+|---------|------|-----------|--------------|
+| FDE Team Interview - Chris Nelson | 11:00 AM (45 mins) | (external) | john-mason, alona |
+| OpenHands all hands | 12:00 PM (30 mins) | robert | john-mason, openhands-staff, cliff.yang |
+| Engineering Office Hours | 1:00 PM (60 mins) | (recurring) | ash, john-mason, engineering-team +2 more |
+| Quick Huddle - McAfee | 2:00 PM (15 mins) | clarke | john-mason, calvin, rajiv.shah |
+| [INT] AMD engagement plan sync | 3:30 PM (30 mins) | cliff.yang | john-mason, rajiv.shah, robert, smit |
+| Platform Team - OHE Release | 4:30 PM (25 mins) | john-mason | ash, ray, ai.vong, joe.laverty +2 more |
 
 ---
 
@@ -544,8 +713,11 @@ Status: ✅ Complete / ⏳ In Progress
 | **✅ Completed Work** | Detailed descriptions of finished work |
 | **🔄 Work in Process** | Started but not complete |
 | **GitHub Issues & PRs** | Reference section with full details |
-| **Communications** | Knowledge sharing |
-| **Meetings** | Meeting notes/attendees |
+| **Communications** | Things learned/shared, with Slack message count |
+| **├─ Shared** | Advice, context, confirmations you provided |
+| **├─ Learned** | New information you received |
+| **└─ Message Count** | Total messages sent with channel breakdown |
+| **Meetings** | Table with time, organizer, participants |
 
 ### Categorizing Follow-up Items
 
@@ -607,7 +779,7 @@ Use `update_a_block` with rich_text containing links:
 
 ---
 
-## Step 9: Retrieve Files from Paused Sandboxes
+## Step 10: Retrieve Files from Paused Sandboxes
 
 If a conversation has files that need to be preserved:
 
@@ -700,10 +872,14 @@ https://app.all-hands.dev/api/v1/
 ```
 User: "I'm in Eastern timezone. What did I work on yesterday? Create a work log."
 
-Agent: "I'll gather your activity from March 30. Let me check Slack, GitHub, and OpenHands..."
+Agent: "I'll gather your activity from March 30. Let me check Slack, GitHub, calendar, 
+       and OpenHands..."
 
 Agent: [Searches Slack for user's messages]
-       "Found your standup post at 7:46 AM with 6 items, plus several other messages."
+       "Found your standup post at 7:46 AM with 6 items, plus 19 other messages."
+
+Agent: [Fetches calendar data]
+       "Found 6 meetings on your calendar."
 
 Agent: [Queries GitHub for PRs/issues]
        "Found 5 PRs authored/updated and 2 issues you were involved with."
@@ -719,8 +895,16 @@ Agent: "Here's what I found:
 | Item | Matched To |
 |------|------------|
 | JPMC v1 upgrade check-in | Conv #3, GitHub discussions |
-| AMD prospect call | ✅ Meeting (no OpenHands) |
+| AMD prospect call | ✅ Meeting at 3:30 PM |
 | Self-hosted backlog | Conv #5, Notion updates |
+
+### Meetings (from Calendar)
+| Meeting | Time | Organizer |
+|---------|------|-----------|
+| OpenHands all hands | 12:00 PM (30 mins) | robert |
+| Engineering Office Hours | 1:00 PM (60 mins) | (recurring) |
+| Quick Huddle - McAfee | 2:00 PM (15 mins) | clarke |
+| AMD engagement plan sync | 3:30 PM (30 mins) | cliff.yang |
 
 ### GitHub Activity
 | PR/Issue | Title | Role |
@@ -735,6 +919,11 @@ Agent: "Here's what I found:
 | 2 | Plugin comparison | (sandbox file) |
 | 3 | Self-hosted roadmap | Notion page updated |
 
+### Slack Messages Not Captured Above
+- Advised Rajiv on McAfee deployment (front-load connectivity validation)
+- Thanked Clarke for Boris Cherny's Claude Code tips thread
+- Confirmed self-hosted customer list with Alona
+
 What's the status of each? Any files to retrieve from #2?"
 
 User: "#1 and #3 done. #2 has a report I want to save. Also add the Tech Council 
@@ -745,7 +934,10 @@ Agent: [Creates Notion page with full structure]
 
 Agent: "Done! Work log created with:
 - 6 standup items tracked
-- 3 GitHub PRs documented  
+- 6 meetings documented with times and organizers  
+- 3 GitHub PRs documented
+- Communications split into Shared/Learned
+- 20 Slack messages counted with channel breakdown
 - Follow-up actions split into carry-over vs new items
 - Report saved as subpage
 
@@ -766,3 +958,8 @@ View: [Notion link]"
 8. **Use markdown field** for Notion pages - much easier than building block arrays
 9. **Link conversations** in pending items so you can resume them easily
 10. **Create subpages** for long content rather than cramming into main page
+11. **Time format for meetings** - Use `H:MM AM/PM (NN mins)` without leading zeros
+12. **Communications ≠ Work** - Only include Slack threads not captured elsewhere
+13. **Count Slack messages** - Provides a quick metric of communication volume
+14. **Calendar via iCal** - Install `icalendar` and `pytz` packages for parsing
+15. **Split Communications** - Separate "Shared" (gave) from "Learned" (received)
