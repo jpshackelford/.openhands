@@ -86,6 +86,10 @@ This generates an HTML page similar to the one used in PR #12699, with:
 
 Add a badge to a plugin README that launches OpenHands with that plugin:
 
+### Example Badge (pr-review plugin)
+
+[![Launch with OpenHands](https://img.shields.io/badge/Launch%20with-OpenHands-blue?logo=data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI+PHBhdGggZmlsbD0id2hpdGUiIGQ9Ik0xMiAyQzYuNDggMiAyIDYuNDggMiAxMnM0LjQ4IDEwIDEwIDEwIDEwLTQuNDggMTAtMTBTMTcuNTIgMiAxMiAyem0xIDE1aC0ydi02aDJ2NnptMC04aC0yVjdoMnYyeiIvPjwvc3ZnPg==)](https://app.all-hands.dev/launch?plugins=W3sic291cmNlIjogImdpdGh1YjpPcGVuSGFuZHMvZXh0ZW5zaW9ucyIsICJyZWYiOiAibWFpbiIsICJyZXBvX3BhdGgiOiAicGx1Z2lucy9wci1yZXZpZXcifV0=)
+
 ### Markdown Badge Format
 
 ```markdown
@@ -98,6 +102,13 @@ Add a badge to a plugin README that launches OpenHands with that plugin:
 python3 <this-skill-path>/scripts/generate_launch_url.py \
   --source "github:owner/repo" \
   --badge
+
+# With custom label
+python3 <this-skill-path>/scripts/generate_launch_url.py \
+  --source "github:OpenHands/extensions" \
+  --repo-path "plugins/pr-review" \
+  --badge \
+  --badge-label "Try PR Review"
 ```
 
 ## Example: Generate for an Extensions Plugin
