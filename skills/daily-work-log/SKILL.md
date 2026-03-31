@@ -23,12 +23,179 @@ Analyze my OpenHands conversations from today and create a private Notion work l
 
 ## Process Overview
 
-1. **Retrieve conversations** from today via OpenHands API
-2. **Extract intent** from first human message of each
-3. **Present summary table** for user review
-4. **Ask verification questions** about completion status
-5. **Create Notion page** with categorized work items
-6. **Retrieve sandbox files** if needed and create subpages
+1. **Gather GitHub activity** - PRs and issues touched today (provides external context)
+2. **Retrieve conversations** from today via OpenHands API
+3. **Extract intent** from first human message of each
+4. **Cross-reference** GitHub activity with conversations
+5. **Present summary table** for user review
+6. **Ask verification questions** about completion status
+7. **Create Notion page** with categorized work items
+8. **Retrieve sandbox files** if needed and create subpages
+
+---
+
+## Step 0: Gather GitHub Activity
+
+**Why do this first?** GitHub PRs and issues provide external verification of work done. By gathering this before analyzing conversations, you can:
+- Cross-reference conversation claims with actual PR/issue activity
+- Identify work done outside of OpenHands (direct GitHub work)
+- Get accurate links and statuses for the work log
+- Spot conversations that created PRs but didn't mention them clearly
+
+### Determine Target Date
+
+Ask the user for their timezone. For US timezones:
+- **Eastern (ET)**: UTC-5 (EST) or UTC-4 (EDT)
+- **Central (CT)**: UTC-6 (CST) or UTC-5 (CDT)
+- **Mountain (MT)**: UTC-7 (MST) or UTC-6 (MDT)
+- **Pacific (PT)**: UTC-8 (PST) or UTC-7 (PDT)
+
+Use the appropriate date for "yesterday" or "today" based on their timezone.
+
+### Get GitHub Username
+
+```bash
+gh api user --jq '.login'
+```
+
+### Search for PRs Authored/Updated
+
+```bash
+gh api -X GET "search/issues" \
+  -f q="author:{username} is:pr updated:{YYYY-MM-DD}" \
+  --jq '.items[] | {
+    repo: (.repository_url | split("/") | .[-1]),
+    number: .number,
+    title: .title,
+    state: .state,
+    url: .html_url
+  }'
+```
+
+### Search for PRs Where User Was Involved
+
+This catches PRs where you commented, reviewed, or were mentioned:
+
+```bash
+gh api -X GET "search/issues" \
+  -f q="involves:{username} is:pr updated:{YYYY-MM-DD} -author:{username}" \
+  --jq '.items[] | {
+    repo: (.repository_url | split("/") | .[-1]),
+    number: .number,
+    title: .title,
+    state: .state,
+    url: .html_url
+  }'
+```
+
+### Search for PRs You Reviewed
+
+```bash
+gh api -X GET "search/issues" \
+  -f q="reviewed-by:{username} is:pr updated:{YYYY-MM-DD}" \
+  --jq '.items[] | {
+    repo: (.repository_url | split("/") | .[-1]),
+    number: .number,
+    title: .title,
+    url: .html_url
+  }'
+```
+
+### Search for Issues Authored/Updated
+
+```bash
+gh api -X GET "search/issues" \
+  -f q="author:{username} is:issue updated:{YYYY-MM-DD}" \
+  --jq '.items[] | {
+    repo: (.repository_url | split("/") | .[-1]),
+    number: .number,
+    title: .title,
+    state: .state,
+    url: .html_url
+  }'
+```
+
+### Search for Issues Where User Was Involved
+
+```bash
+gh api -X GET "search/issues" \
+  -f q="involves:{username} is:issue updated:{YYYY-MM-DD} -author:{username}" \
+  --jq '.items[] | {
+    repo: (.repository_url | split("/") | .[-1]),
+    number: .number,
+    title: .title,
+    url: .html_url
+  }'
+```
+
+### Combined Quick Script
+
+```bash
+USERNAME=$(gh api user --jq '.login')
+DATE="2026-03-30"  # Replace with target date
+
+echo "=== GitHub Activity for $USERNAME on $DATE ==="
+echo ""
+echo "## PRs Authored/Updated"
+gh api "search/issues" -f q="author:$USERNAME is:pr updated:$DATE" \
+  --jq '.items[] | "- [\(.repository_url | split("/") | .[-1])] #\(.number): \(.title) (\(.state))\n  \(.html_url)"'
+
+echo ""
+echo "## PRs Involved (not author)"
+gh api "search/issues" -f q="involves:$USERNAME is:pr updated:$DATE -author:$USERNAME" \
+  --jq '.items[] | "- [\(.repository_url | split("/") | .[-1])] #\(.number): \(.title)\n  \(.html_url)"'
+
+echo ""
+echo "## Issues Authored/Updated"
+gh api "search/issues" -f q="author:$USERNAME is:issue updated:$DATE" \
+  --jq '.items[] | "- [\(.repository_url | split("/") | .[-1])] #\(.number): \(.title) (\(.state))\n  \(.html_url)"'
+
+echo ""
+echo "## Issues Involved (not author)"
+gh api "search/issues" -f q="involves:$USERNAME is:issue updated:$DATE -author:$USERNAME" \
+  --jq '.items[] | "- [\(.repository_url | split("/") | .[-1])] #\(.number): \(.title)\n  \(.html_url)"'
+```
+
+### GitHub Search Modifiers Reference
+
+| Modifier | Example | Purpose |
+|----------|---------|---------|
+| `author:` | `author:username` | Created by user |
+| `involves:` | `involves:username` | Author, commenter, reviewer, or mentioned |
+| `reviewed-by:` | `reviewed-by:username` | User submitted a review |
+| `commenter:` | `commenter:username` | User commented |
+| `mentions:` | `mentions:username` | User was @mentioned |
+| `assignee:` | `assignee:username` | Assigned to user |
+| `is:pr` | `is:pr` | Pull requests only |
+| `is:issue` | `is:issue` | Issues only |
+| `is:open` | `is:open` | Open items only |
+| `is:merged` | `is:merged` | Merged PRs only |
+| `updated:` | `updated:2026-03-30` | Updated on specific date |
+| `created:` | `created:>=2026-03-30` | Created on/after date |
+| `repo:` | `repo:owner/name` | Specific repository |
+
+### Present GitHub Summary
+
+Before diving into conversations, present this to the user:
+
+```
+## GitHub Activity Summary for [Date]
+
+### PRs
+| Repo | # | Title | Status | Role |
+|------|---|-------|--------|------|
+| sdk | 2495 | feat(plugin): Support multiple... | open | author |
+| OpenHands | 12699 | feat(frontend): Add /launch... | open | author |
+| sdk | 2447 | feat(observability): custom ports | open | reviewer |
+
+### Issues
+| Repo | # | Title | Status | Role |
+|------|---|-------|--------|------|
+| automation | 19 | Queue-based dispatch... | open | author |
+| OpenHands | 13454 | V1 API: Conversation Tagging | open | author |
+```
+
+This gives you a verified list of external outputs to cross-reference with conversations.
 
 ---
 
@@ -150,15 +317,38 @@ else:
 "
 ```
 
-## Step 4: Present Summary Table
+## Step 4: Cross-Reference and Present Summary
+
+Combine GitHub activity with conversation analysis to create a complete picture.
+
+### Matching Logic
+
+For each GitHub PR/issue, try to find the conversation that worked on it:
+- Search conversation actions for `git push` to the same branch
+- Look for PR URLs in agent messages
+- Match issue numbers mentioned in conversation text
+
+For each conversation, verify external claims:
+- If conversation says "created PR #123" → verify it appears in GitHub activity
+- If conversation says "updated issue" → check if it shows in `involves:` search
+
+### Combined Summary Table
 
 ```
-| # | Title | Goal | External Output | Status |
-|---|-------|------|-----------------|--------|
-| 1 | PR Review | Fix test failures | PR #2334 updated | ✅ |
-| 2 | Research | Compare plugins | None (file in sandbox) | 📁 |
-| 3 | Slack thread | Draft GitHub issue | Issue #19 created | ✅ |
+| # | Source | Title | External Output | Verified? | Status |
+|---|--------|-------|-----------------|-----------|--------|
+| 1 | Conv + GH | PR Review | PR #2334 | ✅ Found | ✅ Done |
+| 2 | Conv only | Research | (sandbox file) | N/A | 📁 Retrieve |
+| 3 | Conv + GH | Feature | Issue #19 | ✅ Found | ✅ Done |
+| 4 | GH only | PR #2447 review | PR #2447 | ✅ | ✅ Done |
 ```
+
+### Unmatched Items
+
+Flag these for user attention:
+- **GitHub activity with no conversation**: Work done outside OpenHands (or conversation deleted)
+- **Conversation claiming PR/issue not in GitHub**: May have failed, or PR is in different org
+- **Conversation with no external output**: May need sandbox file retrieval
 
 ## Step 5: Verification Questions
 
