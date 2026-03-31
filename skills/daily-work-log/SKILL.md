@@ -44,25 +44,44 @@ Filter results for today's date by checking `created_at` timestamps.
 
 ## Step 2: Extract Intent from Each Conversation
 
-Get the first human message to understand what the user wanted:
+**Important**: A single message rarely tells the full story. Retrieve ALL human messages to understand the user's evolving goal:
 
 ```bash
-curl -s "https://app.all-hands.dev/api/v1/conversations/{conversation_id}/events?kind__eq=HUMAN_MESSAGE&limit=1&sort_order=TIMESTAMP_ASC" \
+curl -s "https://app.all-hands.dev/api/v1/conversations/{conversation_id}/events?kind__eq=HUMAN_MESSAGE&sort_order=TIMESTAMP_ASC" \
   -H "Authorization: Bearer $OH_API_KEY"
 ```
 
-Get the finish message (if any) to see the outcome:
+### Why All Messages Matter
+
+- **First message** may be vague: "help me with this PR"
+- **Middle messages** clarify intent: "actually focus on the test failures"
+- **Later messages** reveal the real goal: "can you also update the docs?"
+- **Final messages** often confirm completion or request follow-up
+
+### Analyzing the Message Sequence
+
+Look for patterns across the conversation:
+
+1. **Initial request** - What did they start with?
+2. **Clarifications** - What details did they add?
+3. **Pivots** - Did the goal change mid-conversation?
+4. **Confirmations** - What did they explicitly approve or accept?
+5. **Follow-ups** - What loose ends were mentioned?
+
+### Also Get the Finish Message
 
 ```bash
 curl -s "https://app.all-hands.dev/api/v1/conversations/{conversation_id}/events?kind__eq=AGENT_FINISH&limit=1&sort_order=TIMESTAMP_DESC" \
   -H "Authorization: Bearer $OH_API_KEY"
 ```
 
+The finish message often summarizes what was accomplished and what remains.
+
 ### Event Kind Filters
 
 | Filter Value | Description |
 |--------------|-------------|
-| `HUMAN_MESSAGE` | User messages |
+| `HUMAN_MESSAGE` | User messages (get ALL of these) |
 | `AGENT_FINISH` | Agent completion messages |
 | `ACTION` | Agent tool calls |
 | `OBSERVATION` | Tool results |
