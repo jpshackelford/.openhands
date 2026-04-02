@@ -114,6 +114,31 @@ Scan messages for language indicating commitments:
 - "Following up on...", "Still working on..."
 - Responses to requests that imply action
 
+### Constructing Slack Message Permalinks
+
+**IMPORTANT**: To link directly to specific Slack messages in the work log, use this format:
+
+```
+https://{workspace}.slack.com/archives/{channel_id}/p{timestamp_without_period}
+```
+
+Where:
+- `{workspace}` is your Slack workspace (e.g., `allhandsai`)
+- `{channel_id}` is the channel ID (e.g., `C09EC5A0KRQ`)
+- `{timestamp_without_period}` is the message timestamp with the period removed
+
+For example, if a message has `ts: "1775044942.271039"` in channel `C09EC5A0KRQ`:
+```
+https://allhandsai.slack.com/archives/C09EC5A0KRQ/p1775044942271039
+```
+
+For thread replies, add the thread timestamp:
+```
+https://allhandsai.slack.com/archives/{channel_id}/p{timestamp}?thread_ts={parent_ts}&cid={channel_id}
+```
+
+**Tip**: The Slack search results include `channel_id` and message timestamps. Use these to construct permalinks for the Communications section.
+
 ### Count Total Messages
 
 Track the total number of messages sent and break down by channel:
@@ -394,22 +419,48 @@ This gives you a verified list of external outputs to cross-reference with conve
 
 ## Step 4: List Today's OpenHands Conversations
 
+**IMPORTANT**: Use the `/search` endpoint with date filters. The response contains items in the `.items[]` array, NOT at the root level.
+
 ```bash
-curl -s "https://app.all-hands.dev/api/v1/app-conversations?limit=50&sort_by=created_at&sort_order=desc" \
+# For Eastern timezone (UTC-4 during EDT), use appropriate UTC offsets
+curl -s "https://app.all-hands.dev/api/v1/app-conversations/search?created_at__gte=2026-04-01T04:00:00Z&created_at__lt=2026-04-02T04:00:00Z&limit=50" \
   -H "Authorization: Bearer $OH_API_KEY" \
-  -H "Accept: application/json"
+  | jq '[.items[] | {id: .id, title: .title, created_at: .created_at}] | sort_by(.created_at)'
 ```
 
-Filter results for today's date by checking `created_at` timestamps.
+**Key points:**
+- Use `/search` endpoint, NOT `/app-conversations` directly
+- Filter by `created_at__gte` (start of day in UTC) and `created_at__lt` (end of day in UTC)
+- Results are in `.items[]` array
+- For Eastern timezone (EDT = UTC-4): midnight local = 04:00 UTC
+
+### Alternative: List and Filter
+
+If the search endpoint doesn't return expected results, you can list recent conversations and filter:
+
+```bash
+curl -s "https://app.all-hands.dev/api/v1/app-conversations?limit=100&sort_by=created_at&sort_order=desc" \
+  -H "Authorization: Bearer $OH_API_KEY" \
+  | jq --arg start "2026-04-01" --arg end "2026-04-02" \
+    '[.items[] | select(.created_at >= $start and .created_at < $end)]'
+```
+
+**Note**: Results are paginated. Check for `next_page_id` and use `page_id` parameter for subsequent pages.
 
 ## Step 5: Extract Intent from Each Conversation
 
 **Important**: A single message rarely tells the full story. Retrieve ALL human messages to understand the user's evolving goal:
 
 ```bash
-curl -s "https://app.all-hands.dev/api/v1/conversations/{conversation_id}/events?kind__eq=HUMAN_MESSAGE&sort_order=TIMESTAMP_ASC" \
-  -H "Authorization: Bearer $OH_API_KEY"
+curl -s "https://app.all-hands.dev/api/v1/conversation/{conversation_id}/events/search?kind__eq=MessageEvent&limit=100" \
+  -H "Authorization: Bearer $OH_API_KEY" \
+  | jq '[.items[] | select(.source == "user") | {timestamp: .timestamp, content: .content}]'
 ```
+
+**Note**: The events search endpoint uses:
+- Path: `/api/v1/conversation/{id}/events/search` (singular "conversation")
+- Filter: `kind__eq=MessageEvent` for messages
+- Results in `.items[]` array
 
 ### Why All Messages Matter
 
@@ -431,8 +482,9 @@ Look for patterns across the conversation:
 ### Also Get the Finish Message
 
 ```bash
-curl -s "https://app.all-hands.dev/api/v1/conversations/{conversation_id}/events?kind__eq=AGENT_FINISH&limit=1&sort_order=TIMESTAMP_DESC" \
-  -H "Authorization: Bearer $OH_API_KEY"
+curl -s "https://app.all-hands.dev/api/v1/conversation/{conversation_id}/events/search?kind__eq=ActionEvent&limit=50" \
+  -H "Authorization: Bearer $OH_API_KEY" \
+  | jq '[.items[] | select(.tool_name == "finish")] | last'
 ```
 
 The finish message often summarizes what was accomplished and what remains.
@@ -441,10 +493,9 @@ The finish message often summarizes what was accomplished and what remains.
 
 | Filter Value | Description |
 |--------------|-------------|
-| `HUMAN_MESSAGE` | User messages (get ALL of these) |
-| `AGENT_FINISH` | Agent completion messages |
-| `ACTION` | Agent tool calls |
-| `OBSERVATION` | Tool results |
+| `MessageEvent` | User and agent messages |
+| `ActionEvent` | Agent tool calls (filter by `.tool_name`) |
+| `ObservationEvent` | Tool results |
 
 ## Step 6: Identify External Actions (What Escaped the Sandbox?)
 
@@ -454,8 +505,9 @@ Scan the conversation events for actions that persisted work externally:
 
 ```bash
 # Get all actions to analyze what was done
-curl -s "https://app.all-hands.dev/api/v1/conversations/{conversation_id}/events?kind__eq=ACTION&sort_order=TIMESTAMP_ASC" \
-  -H "Authorization: Bearer $OH_API_KEY"
+curl -s "https://app.all-hands.dev/api/v1/conversation/{conversation_id}/events/search?kind__eq=ActionEvent&limit=100" \
+  -H "Authorization: Bearer $OH_API_KEY" \
+  | jq '[.items[] | {tool: .tool_name, summary: .summary}]'
 ```
 
 ### External Actions to Look For
@@ -478,7 +530,7 @@ curl -s "https://app.all-hands.dev/api/v1/conversations/{conversation_id}/events
 ### Quick Analysis Script
 
 ```bash
-curl -s "https://app.all-hands.dev/api/v1/conversations/{id}/events?kind__eq=ACTION" \
+curl -s "https://app.all-hands.dev/api/v1/conversation/{id}/events/search?kind__eq=ActionEvent&limit=100" \
   -H "Authorization: Bearer $OH_API_KEY" | python3 -c "
 import json, sys
 data = json.load(sys.stdin)
@@ -587,6 +639,16 @@ For each conversation, determine:
 
 ## Step 9: Create Notion Work Log Page
 
+### Creating vs Updating Pages
+
+**IMPORTANT**: The Notion MCP's `update_page_markdown` tool has a complex API that is prone to validation errors. Instead of trying to update an existing page:
+
+**Recommended approach for updates:**
+1. **Delete the existing page** using `patch_page` with `in_trash: true`
+2. **Create a new page** using `post_page` with the `markdown` field
+
+This is more reliable than trying to use `update_page_markdown` which requires specific `type` and nested structure parameters that often fail validation.
+
 ### Page Structure
 
 The final page structure organizes work into clear sections:
@@ -669,12 +731,12 @@ Status: ✅ Complete / ⏳ In Progress
 Conversations not captured in other sections:
 
 ### Shared
-- Advised Rajiv on McAfee self-hosted deployment - Recommended front-loading connectivity validation before kickoff to avoid delays.
-- Shared commit history context (#proj-self-hosted) - Referenced [September commit](url) about chart README changes.
-- Confirmed self-hosted customer list (#proj-self-hosted) - Verified with Alona that JPMC, C3.ai, Lynx, Archipelago, Werfen are tracked.
+- [Advised Rajiv on McAfee deployment](https://allhandsai.slack.com/archives/C0A8MKT4RSA/p1775044942271039) - Recommended front-loading connectivity validation before kickoff.
+- [Shared code quality CI approach](https://allhandsai.slack.com/archives/C0ALCEFB7AQ/p1775069225318279) - method/file line limits in #proj-automations.
+- [Confirmed self-hosted customer list](https://allhandsai.slack.com/archives/C0A8MKT4RSA/p1775058460350129) - Verified with Alona.
 
 ### Learned
-- Claude Code power-user tips (#competition) - Clarke shared Boris Cherny's thread with advanced features: /branch, /btw, git worktrees, /batch, --bare, etc.
+- [Claude Code power-user tips](https://allhandsai.slack.com/archives/C07P44PGXU2/p1775051891612679) (#competition) - Clarke shared Boris Cherny's thread.
 
 **You sent 20 Slack messages on March 30, 2026.**
 
@@ -762,9 +824,21 @@ Use the Notion MCP `post_page` tool with the `markdown` field:
 - Links `[text](url)`
 - Bullet and numbered lists
 
+### Updating Existing Pages
+
+**Avoid using `update_page_markdown`** - it has a complex API with required parameters like `type` (must be one of `insert_content`, `replace_content_range`, `update_content`, or `replace_content`) and nested structures like `replace_content.new_str` that are prone to validation errors.
+
+**Instead, to modify an existing work log page:**
+
+1. **Read the current content** using `retrieve_page_markdown`
+2. **Delete the page** using `patch_page` with body `{"in_trash": true}`
+3. **Create a new page** with the updated content using `post_page` with `markdown` field
+
+This delete-and-recreate approach is more reliable than trying to use the update API.
+
 ### Adding Hyperlinks to Existing Blocks
 
-Use `update_a_block` with rich_text containing links:
+If you need to update a specific block, use `update_a_block` with rich_text containing links:
 
 ```json
 {
@@ -835,6 +909,7 @@ These Notion operations require human approval at:
 | `notion.post_page` | Creating new pages |
 | `notion.update_a_block` | Updating existing blocks |
 | `notion.delete_a_block` | Deleting blocks |
+| `notion.patch_page` | Updating page properties (including trash) |
 | `notion.create_file` | File uploads |
 
 Approval persists for the session after first grant.
@@ -852,18 +927,39 @@ https://app.all-hands.dev/api/v1/
 
 | Endpoint | Method | Purpose |
 |----------|--------|---------|
-| `/app-conversations` | GET | List conversations |
+| `/app-conversations/search` | GET | Search conversations with filters |
 | `/app-conversations?ids=X` | GET | Get specific conversation(s) |
-| `/conversations/{id}/events` | GET | Get conversation events |
+| `/conversation/{id}/events/search` | GET | Search conversation events |
 | `/sandboxes/{id}/resume` | POST | Resume paused sandbox |
 
-### Query Parameters for Events
+### Conversation Search Parameters
+
+| Parameter | Example | Purpose |
+|-----------|---------|---------|
+| `created_at__gte` | `2026-04-01T04:00:00Z` | Created after (inclusive) |
+| `created_at__lt` | `2026-04-02T04:00:00Z` | Created before (exclusive) |
+| `limit` | `50` | Max results per page |
+| `page_id` | `{next_page_id}` | Pagination cursor |
+
+### Event Search Parameters
 
 | Parameter | Values |
 |-----------|--------|
-| `kind__eq` | `HUMAN_MESSAGE`, `AGENT_FINISH`, `ACTION`, `OBSERVATION` |
-| `sort_order` | `TIMESTAMP_ASC`, `TIMESTAMP_DESC` |
-| `limit` | Number of events (default varies) |
+| `kind__eq` | `MessageEvent`, `ActionEvent`, `ObservationEvent` |
+| `sort_order` | `TIMESTAMP` (default), `TIMESTAMP_DESC` |
+| `limit` | Number of events (max 100) |
+| `page_id` | Pagination cursor |
+
+### Response Structure
+
+Both search endpoints return results in this structure:
+```json
+{
+  "items": [...],           // Array of results
+  "next_page_id": "...",    // For pagination (null if no more)
+  "total": 123              // Total count (may be approximate)
+}
+```
 
 ---
 
@@ -963,3 +1059,6 @@ View: [Notion link]"
 13. **Count Slack messages** - Provides a quick metric of communication volume
 14. **Calendar via iCal** - Install `icalendar` and `pytz` packages for parsing
 15. **Split Communications** - Separate "Shared" (gave) from "Learned" (received)
+16. **Use /search endpoint** for conversations - results are in `.items[]` array
+17. **Delete-and-recreate** for Notion updates - more reliable than `update_page_markdown`
+18. **Construct Slack permalinks** - Use `https://{workspace}.slack.com/archives/{channel_id}/p{ts_without_period}`
