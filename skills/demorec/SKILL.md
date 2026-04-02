@@ -45,13 +45,14 @@ A great demo = **WHO** (specific user) + **WHAT** (outcome they achieve) + **WOW
 
 5. **Focus on one scenario** — One user, one problem, one win. A focused demo lands harder than a feature tour. Pick a scenario that illustrates the story in a single logical flow, not a list of disconnected features.
 
-### Demo Structure: Tell → Show → Remind
+### Demo Structure: Tell → Show → Remind → Act
 
 When you transition to the demo itself:
 
 1. **Tell** — Tell the viewer what they're about to see and why it matters
 2. **Show** — Describe what they're seeing as you show it
 3. **Remind** — At wrap-up, remind the viewer what they just saw and how it ticks the boxes on what a successful solution looks like
+4. **Act** — End with a call to action, not "thank you." What should the viewer do next? Try it? Sign up? Review the PR? Give them a clear next step.
 
 ### Examples
 
