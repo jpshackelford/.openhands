@@ -245,6 +245,32 @@ pip install demorec
 demorec install
 ```
 
+### System Dependencies
+
+demorec requires several system dependencies beyond Python packages:
+
+```bash
+# Install Playwright browsers (required for all recording)
+playwright install --with-deps chromium
+
+# Install ttyd for terminal recording (real PTY support)
+wget -qO /tmp/ttyd https://github.com/tsl0922/ttyd/releases/download/1.7.7/ttyd.x86_64
+chmod +x /tmp/ttyd
+sudo mv /tmp/ttyd /usr/local/bin/ttyd
+ttyd --version
+
+# Install ffmpeg for video processing and vim for code review demos
+sudo apt-get update && sudo apt-get install -y vim ffmpeg
+```
+
+**Summary of dependencies:**
+| Dependency | Purpose |
+|------------|---------|
+| Playwright + Chromium | Browser automation and screen capture (terminal + browser modes) |
+| ttyd | Real PTY support for terminal recording (actual shell execution) |
+| ffmpeg | Video segment concatenation, audio mixing, subtitle embedding |
+| vim | Code review demos with syntax highlighting |
+
 ### CLI Commands
 
 ```bash
@@ -283,10 +309,22 @@ Set Height 720            # Video height in pixels
 #### Mode Switching
 
 ```tape
-@mode terminal            # Switch to terminal mode
+@mode terminal            # Switch to terminal mode (default session)
 @mode browser             # Switch to browser mode
 @mode presentation "slides.md"  # Switch to presentation mode
 ```
+
+#### Named Terminal Sessions
+
+Use named sessions for multi-terminal demos (e.g., server + client):
+
+```tape
+@mode terminal            # Default terminal session
+@mode terminal:server     # Named session "server"
+@mode terminal:client     # Named session "client"
+```
+
+Each named session is independent and persistent. Switch between them freely—state is preserved.
 
 #### Terminal Commands
 
@@ -333,6 +371,25 @@ Slide 2                   # Show slide 2 (default duration)
 ```
 
 ### Best Practices for demorec Scripts
+
+#### Persistent Sessions
+
+Terminal sessions persist across mode switches. You can:
+- Set up environment variables in terminal, switch to browser, and return to terminal with state intact
+- Run a server in one terminal, view it in browser, make requests from another terminal
+- Maintain working directory and shell history across the entire demo
+
+This eliminates the need to repeat setup commands when switching modes.
+
+#### Named Sessions for Multi-Terminal Demos
+
+Common patterns:
+
+| Pattern | Sessions | Use Case |
+|---------|----------|----------|
+| Server + Client | `terminal:server`, `terminal:client` | API demos, network tools |
+| Build + Run | `terminal:build`, `terminal:run` | CI/CD demos, compilation |
+| Edit + Test | `terminal:editor`, `terminal:test` | Development workflow demos |
 
 #### Terminal Size Control
 
@@ -456,6 +513,65 @@ Enter
 Sleep 1s
 ```
 
+#### Multi-Terminal Server + Client Demo
+
+```tape
+# server-client.demorec
+Output server-client-demo.mp4
+Set Width 1280
+Set Height 720
+
+# @voice edge:jenny
+
+# ─── Set up environment in default terminal ───
+@mode terminal
+# @narrate:before "Let's set up our environment first."
+Type "export API_KEY='secret-token-xyz'"
+Enter
+Sleep 500ms
+Type "echo 'API Key configured:' $API_KEY"
+Enter
+Sleep 1s
+
+# ─── Start server in named session ───
+@mode terminal:server
+# @narrate:before "Now let's start our server in a separate terminal."
+Type "cd /tmp && echo '<h1>Hello!</h1>' > index.html"
+Enter
+Sleep 500ms
+Type "python3 -m http.server 8080"
+Enter
+Sleep 2s
+
+# ─── View in browser ───
+@mode browser
+# @narrate:before "Let's see the server in the browser."
+Navigate "http://localhost:8080"
+Sleep 2s
+
+# ─── Make requests from client terminal ───
+@mode terminal:client
+# @narrate:before "Now let's make requests from a client terminal."
+Type "curl http://localhost:8080/"
+Enter
+Sleep 1s
+
+# ─── Back to server - show logs ───
+@mode terminal:server
+# @narrate:after "Notice the request logs in the server terminal."
+Sleep 2s
+Ctrl+C
+Sleep 500ms
+
+# ─── Original terminal state preserved ───
+@mode terminal
+# @narrate:before "And our original terminal still has its state."
+Type "echo $API_KEY"
+Enter
+Sleep 1s
+# @narrate:after "Environment preserved across all mode switches!"
+```
+
 #### Presentation with Live Demo
 
 ```tape
@@ -485,7 +601,7 @@ Sleep 3s
 # ─── CLOSING ───
 @mode presentation "intro.md"
 
-# @narrate:during "Thank you for watching."
+# @narrate:during "Try it yourself at example.com/demo"
 Slide 10 4s
 ```
 
