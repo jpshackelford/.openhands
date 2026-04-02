@@ -20,15 +20,79 @@ demorec is a declarative tool for creating professional demo videos that seamles
 
 ## Part 1: What Makes a Good Demo
 
-<!-- 
-TODO: This section will be filled in with user's advice about:
-- Key principles for effective demos
-- What to emphasize
-- What to avoid
-- How to structure the narrative
--->
+### The Foundation: Problem → Solution → Impact
 
-*[This section is pending input from the user about demo best practices.]*
+A good demo starts by describing:
+1. **The problem solved** — What pain point or challenge does this address?
+2. **Why it matters** — What's at stake if this problem goes unsolved?
+3. **The positive impact** — What does the world look like with this solution in place?
+
+Avoid flowery language, buzzwords, and unnecessary adjectives. Focus on clear, direct statements that deliver meaningful content.
+
+### The Core Formula: WHO + WHAT + WOW
+
+A great demo = **WHO** (specific user) + **WHAT** (outcome they achieve) + **WOW** (measurable differentiator)
+
+### The 5 Rules
+
+1. **Be specific about WHO** — Name a real user type, not "users" or "customers." Vague users = vague impact.
+
+2. **Frame WHAT around outcomes, not features** — Describe what the user *achieves*, not what they *use*.
+
+3. **Define success criteria** — What would a successful solution look like? Then show how your approach delivers it.
+
+4. **Quantify the WOW** — If you can't measure the improvement, it's a wish, not a differentiator.
+
+5. **Focus on one scenario** — One user, one problem, one win. A focused demo lands harder than a feature tour. Pick a scenario that illustrates the story in a single logical flow, not a list of disconnected features.
+
+### Demo Structure: Tell → Show → Remind
+
+When you transition to the demo itself:
+
+1. **Tell** — Tell the viewer what they're about to see and why it matters
+2. **Show** — Describe what they're seeing as you show it
+3. **Remind** — At wrap-up, remind the viewer what they just saw and how it ticks the boxes on what a successful solution looks like
+
+### Examples
+
+**✅ Good Demo Framing:**
+> "A first-time homebuyer can identify and compare mortgage options that fit their budget **in under 5 minutes**, without needing to call a bank representative."
+
+- **Who:** First-time homebuyer (specific)
+- **What:** Identify and compare mortgage options fitting their budget
+- **Wow:** Under 5 minutes, no phone call needed (measurable, differentiating)
+
+**✅ Good Demo Framing:**
+> "A procurement officer can respond to a supply chain disruption **within minutes instead of days**, with a complete impact analysis automatically generated."
+
+- **Who:** Procurement officer
+- **What:** Respond to supply chain disruption with impact analysis
+- **Wow:** Minutes instead of days, automatic (measurable transformation)
+
+**❌ Bad Demo Framing:**
+> "Users can use our dashboard to view their data."
+
+- Who is "users"? (too vague)
+- What outcome? Just viewing? (not meaningful)
+- No wow factor—what's differentiated or measurable?
+
+**❌ Bad Demo Framing:**
+> "We built a mobile app with push notifications."
+
+- This is an *implementation*, not an outcome
+- No user specified
+- No measurable success criteria
+
+### Quick Gut-Check Before You Demo
+
+Before recording, ask yourself:
+
+- Does it name a real user (not "users" or "customers")?
+- Does it describe an outcome they *achieve*, not a feature they *use*?
+- Could a competitor watch this and *not* immediately know your implementation?
+- Can you measure whether you hit the "wow"?
+
+**If you answer "no" to any of these, reframe it.**
 
 ---
 
