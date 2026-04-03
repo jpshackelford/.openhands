@@ -639,6 +639,42 @@ For each conversation, determine:
 
 ## Step 9: Create Notion Work Log Page
 
+### Determine the Parent Page ID
+
+Work log pages need a parent page in Notion. Determine the parent page ID using this priority:
+
+1. **User-provided parameter** - If the user passes a page ID in the conversation (e.g., "use page ID abc123 as the parent"), use that directly.
+
+2. **Environment variable** - Check for `WORKLOG_PARENT_PAGE`:
+   ```bash
+   echo $WORKLOG_PARENT_PAGE
+   ```
+   If set, use this value as the parent page ID.
+
+3. **Search Notion** - If neither is available, search for existing work log pages and find their common parent:
+   ```
+   notion.post_search(body={"query": "work log", "page_size": 10})
+   ```
+   
+   Look at the results for pages titled "Work Log YYYY-MM-DD" and extract their parent page ID:
+   ```json
+   {
+     "parent": {
+       "type": "page_id",
+       "page_id": "25d7be79-8a17-8076-950c-f53cedc5c1a0"  // <-- This is the parent
+     }
+   }
+   ```
+   
+   Multiple work log pages should share the same parent. Use this common parent for new work logs.
+
+4. **Ask the user** - If no work logs exist yet and no environment variable is set, ask the user to provide the Notion page URL or ID where work logs should be created.
+
+**Tip**: Once you find the parent page ID, suggest the user set it as an environment variable for future sessions:
+```
+export WORKLOG_PARENT_PAGE="25d7be79-8a17-8076-950c-f53cedc5c1a0"
+```
+
 ### Creating vs Updating Pages
 
 **IMPORTANT**: The Notion MCP's `update_page_markdown` tool has a complex API that is prone to validation errors. Instead of trying to update an existing page:
@@ -805,17 +841,22 @@ When creating the Follow-up Actions section, split items into:
 
 ### Creating with Markdown
 
-Use the Notion MCP `post_page` tool with the `markdown` field:
+Use the Notion MCP `post_page` tool with the `markdown` field. Replace `{PARENT_PAGE_ID}` with the ID determined above:
 
 ```json
 {
-  "parent": {"type": "page_id", "page_id": "[parent-id]"},
+  "parent": {"type": "page_id", "page_id": "{PARENT_PAGE_ID}"},
   "properties": {
     "title": {"title": [{"type": "text", "text": {"content": "Work Log YYYY-MM-DD"}}]}
   },
   "markdown": "[full markdown content]"
 }
 ```
+
+Where `{PARENT_PAGE_ID}` comes from:
+- The user-provided page ID, OR
+- The `$WORKLOG_PARENT_PAGE` environment variable, OR
+- The parent of existing "Work Log" pages found via Notion search
 
 **The `markdown` field automatically converts:**
 - Headers (##, ###)
