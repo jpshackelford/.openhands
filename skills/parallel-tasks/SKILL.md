@@ -32,14 +32,14 @@ Apply this pattern when:
 
 ## Prerequisites: Installing lxa
 
-The `lxa` CLI is required for this pattern. Install using `uv`:
+The `lxa` CLI is required for this pattern. Install from GitHub using `uv`:
 
 ```bash
-# Install as a tool (recommended for CLI tools)
-uv tool install lxa
+# Install as a tool from GitHub (recommended)
+uv tool install git+https://github.com/jpshackelford/lxa.git
 
 # Or run directly without installing
-uvx lxa --help
+uvx --from git+https://github.com/jpshackelford/lxa.git lxa --help
 ```
 
 Verify installation:
@@ -48,7 +48,7 @@ lxa --version
 lxa run --help
 ```
 
-**Note:** When using `uvx`, prefix commands with `uvx` (e.g., `uvx lxa run --background ...`). When installed as a tool, use `lxa` directly.
+**Note:** When using `uvx`, prefix commands with `uvx --from git+https://github.com/jpshackelford/lxa.git` (e.g., `uvx --from git+https://github.com/jpshackelford/lxa.git lxa run --background ...`). When installed as a tool, use `lxa` directly.
 
 ## Core Workflow
 
