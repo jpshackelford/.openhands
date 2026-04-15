@@ -3,6 +3,7 @@ name: cli-testing
 description: This skill should be used when manually testing CLI tools, documenting test results for pull requests, verifying command-line interface behavior, or reporting CLI test outcomes. Use this skill when asked to "test the CLI", "run manual tests", "verify CLI behavior", "document test results", or "report testing outcomes in a PR".
 triggers:
 - manual testing
+- manual test
 - cli testing
 - test cli
 - verify cli
