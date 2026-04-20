@@ -1,0 +1,22 @@
+{
+  "name": "pr-shepherd",
+  "version": "0.1.0",
+  "description": "Orchestrate PRs through the development lifecycle - discover from trajectory data, track on boards, analyze status, and advance through review/merge",
+  "author": {
+    "name": "JP Shackelford",
+    "email": "jpshackelford@users.noreply.github.com"
+  },
+  "homepage": "https://github.com/jpshackelford/.openhands",
+  "repository": "https://github.com/jpshackelford/.openhands",
+  "license": "MIT",
+  "keywords": [
+    "github",
+    "pull-request",
+    "ci",
+    "review",
+    "workflow",
+    "automation",
+    "ohtv",
+    "lxa"
+  ]
+}
