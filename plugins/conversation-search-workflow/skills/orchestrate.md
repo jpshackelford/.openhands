@@ -71,8 +71,8 @@ Before spawning a worker, check if any related conversations are still active. A
 Use `ohtv list` with the `--idle` flag to see active vs quiet conversations at a glance:
 
 ```bash
-# Sync recent conversations first
-ohtv sync --since 4h --quiet
+# Sync recent conversations first (--since requires ISO date format)
+ohtv sync --since $(date -u -d '4 hours ago' +%Y-%m-%dT%H:%M:%S) --quiet
 
 # Check conversations for this repo with idle time
 # Red = active (< threshold), Green = quiet (>= threshold)
