@@ -99,7 +99,11 @@ curl -X POST "https://app.all-hands.dev/api/automation/v1/preset/plugin" \
   -d '{
     "name": "Conversation Search Workflow Orchestrator",
     "plugins": [
-      {"source": "github:jpshackelford/.openhands", "repo_path": "plugins/conversation-search-workflow"}
+      {
+        "source": "github:jpshackelford/.openhands",
+        "repo_path": "plugins/conversation-search-workflow",
+        "ref": "add-conversation-search-workflow-plugin"
+      }
     ],
     "prompt": "/orchestrate",
     "trigger": {
@@ -112,6 +116,8 @@ curl -X POST "https://app.all-hands.dev/api/automation/v1/preset/plugin" \
     ]
   }'
 ```
+
+**Note:** The `ref` field loads the plugin from the PR branch. Change to `"ref": "main"` (or remove `ref`) once the plugin PR is merged.
 
 ## Key Principles
 

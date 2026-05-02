@@ -32,13 +32,20 @@ curl -X POST "https://app.all-hands.dev/api/v1/app-conversations" \
       "run": true
     },
     "plugins": [
-      {"source": "github:jpshackelford/.openhands", "repo_path": "plugins/conversation-search-workflow"}
+      {
+        "source": "github:jpshackelford/.openhands",
+        "repo_path": "plugins/conversation-search-workflow",
+        "ref": "add-conversation-search-workflow-plugin"
+      }
     ],
     "pr_number": [123]
   }'
 ```
 
-**Note:** The `repo_path` field specifies the subdirectory containing the plugin within the repository.
+**Plugin fields:**
+- `source`: GitHub repo containing the plugin
+- `repo_path`: Subdirectory path to the plugin
+- `ref`: Branch, tag, or commit SHA (use PR branch until merged to main)
 
 **Response** returns a start task:
 ```json
@@ -110,10 +117,10 @@ Prompt: |
   Follow the PR workflow: branch, implement with tests (>80% coverage), 
   lint, commit, push, create draft PR, monitor CI until green,
   then reflect and update the plan before moving PR to ready.
-Plugins: github:jpshackelford/.openhands/plugins/conversation-search-workflow
+Plugins: github:jpshackelford/.openhands/plugins/conversation-search-workflow@add-conversation-search-workflow-plugin
 ```
 
-The plugin path `github:jpshackelford/.openhands/plugins/conversation-search-workflow` ensures the worker has access to all workflow skills.
+The plugin path includes `@branch` to load from the PR branch. Once merged, change to `@main` or omit the ref.
 
 ## Reference
 

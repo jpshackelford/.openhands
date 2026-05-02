@@ -149,7 +149,7 @@ Prompt: |
   8. Move PR from draft to ready (triggers review bot)
   9. Exit - review handling is a separate conversation
   
-Plugins: github:jpshackelford/.openhands/plugins/conversation-search-workflow
+Plugins: github:jpshackelford/.openhands/plugins/conversation-search-workflow@add-conversation-search-workflow-plugin
 ```
 
 ### Review Worker
@@ -180,7 +180,7 @@ Prompt: |
   9. Move PR back to ready: gh pr ready {number}
   10. Exit - next review round is a separate conversation
 
-Plugins: github:jpshackelford/.openhands/plugins/conversation-search-workflow
+Plugins: github:jpshackelford/.openhands/plugins/conversation-search-workflow@add-conversation-search-workflow-plugin
 PR Number: {number}
 ```
 
@@ -211,7 +211,7 @@ Prompt: |
   8. Push the plan update to main
   9. Exit
 
-Plugins: github:jpshackelford/.openhands/plugins/conversation-search-workflow
+Plugins: github:jpshackelford/.openhands/plugins/conversation-search-workflow@add-conversation-search-workflow-plugin
 PR Number: {number}
 ```
 
