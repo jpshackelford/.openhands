@@ -64,17 +64,31 @@ cat AGENTS.md
 
 ## Avoiding Duplicate Work
 
-Before spawning a worker, check for active conversations:
+Before spawning a worker, check for active conversations using the OH Cloud API:
 
 ```bash
-# Check recent OH conversations for this repo
-curl -s "https://app.all-hands.dev/api/v1/app-conversations/search?title__contains=conversation-search" \
-  -H "X-Access-Token: $OH_API_KEY" \
-| jq '.items[:5] | .[] | {id, title, execution_status, created_at}'
+# Check if any conversation-search conversations are currently running
+curl -s "https://app.all-hands.dev/api/v1/app-conversations/search?title__contains=conversation-search&limit=20" \
+  -H "Authorization: Bearer $OH_API_KEY" \
+| jq '[.items[] | select(.execution_status == "running" or .sandbox_status == "RUNNING")] | length'
+# Returns: 0 (safe to spawn) or N (N conversations still running)
+
+# To see which ones are running:
+curl -s "https://app.all-hands.dev/api/v1/app-conversations/search?title__contains=conversation-search&limit=20" \
+  -H "Authorization: Bearer $OH_API_KEY" \
+| jq '.items[] | select(.execution_status == "running" or .sandbox_status == "RUNNING") | {id: .id[:8], title: .title[:50], sandbox_status, execution_status, updated_at}'
 ```
 
+**Key status fields:**
+- `sandbox_status`: `RUNNING` (sandbox active) | `PAUSED` (sandbox stopped)
+- `execution_status`: `running` (agent working) | `null` (idle/done) | `error`
+
+A conversation is **active** when:
+- `execution_status == "running"` OR
+- `sandbox_status == "RUNNING"`
+
 Only spawn if:
-- No conversation with `execution_status: "running"` for this repo in the last hour
+- No active conversations for this repo
 - The work genuinely needs to be done (not already in progress)
 
 ## Spawning Workers
