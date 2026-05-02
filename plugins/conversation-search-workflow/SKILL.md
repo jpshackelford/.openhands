@@ -131,6 +131,32 @@ curl -X POST "https://app.all-hands.dev/api/automation/v1/preset/plugin" \
 
 5. **Natural language parsing**: No special formats needed - the agent reads PRs, reviews, and docs naturally.
 
+## Required Tools Setup
+
+Install these tools before running the orchestrator:
+
+### lxa (PR Dashboard)
+
+```bash
+uv pip install git+https://github.com/jpshackelford/lxa.git
+```
+
+Then add the repo to your lxa board:
+```bash
+lxa repo add OpenHands/conversation-search
+```
+
+### ohtv (OpenHands Conversation Viewer)
+
+```bash
+uv pip install git+https://github.com/jpshackelford/ohtv.git
+```
+
+Sync recent conversations:
+```bash
+ohtv sync --since $(date -u -d '4 hours ago' +%Y-%m-%dT%H:%M:%S) --quiet
+```
+
 ## Environment Variables
 
 - `OH_API_KEY` - OpenHands API key for spawning conversations

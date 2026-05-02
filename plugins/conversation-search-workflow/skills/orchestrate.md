@@ -44,9 +44,25 @@ This skill runs automatically via cron automation. It:
 └──────────────────────────────────────────────────────────────────┘
 ```
 
+## Step 0: Ensure Tools Are Installed
+
+Before anything else, ensure `lxa` and `ohtv` are available:
+
+```bash
+# Install if not already present
+which lxa || uv pip install git+https://github.com/jpshackelford/lxa.git
+which ohtv || uv pip install git+https://github.com/jpshackelford/ohtv.git
+
+# Ensure the repo is on the lxa board
+lxa repo add OpenHands/conversation-search 2>/dev/null || true
+
+# Sync recent ohtv data
+ohtv sync --since $(date -u -d '4 hours ago' +%Y-%m-%dT%H:%M:%S) --quiet
+```
+
 ## Step 1: Check for Human Instructions
 
-**This is always the first thing the orchestrator does.**
+**This is the first thing the orchestrator does after setup.**
 
 Read recent messages from `#proj-conv-search-prototype` (ID: `C0B19PK8YR0`) to check if a human has provided instructions since the last orchestrator run (~30 minutes ago).
 
