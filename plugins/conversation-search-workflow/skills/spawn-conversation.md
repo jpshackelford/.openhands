@@ -24,19 +24,21 @@ curl -X POST "https://app.all-hands.dev/api/v1/app-conversations" \
   -H "X-Access-Token: $OH_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
-    "selected_repository": "OWNER/REPO",
+    "selected_repository": "OpenHands/conversation-search",
     "git_provider": "github",
-    "title": "Your Title Here",
+    "title": "[Impl] Add semantic search",
     "initial_message": {
       "content": [{"type": "text", "text": "Your prompt here"}],
       "run": true
     },
     "plugins": [
-      {"source": "github:owner/plugin-repo", "ref": "main"}
+      {"source": "github:jpshackelford/.openhands", "repo_path": "plugins/conversation-search-workflow"}
     ],
     "pr_number": [123]
   }'
 ```
+
+**Note:** The `repo_path` field specifies the subdirectory containing the plugin within the repository.
 
 **Response** returns a start task:
 ```json
@@ -102,14 +104,16 @@ Once verified the conversation started:
 **Starting an implementation worker:**
 ```
 Repository: OpenHands/conversation-search
-Title: Implement Phase 2 - Ingestion Pipeline
+Title: [Impl] Add semantic search
 Prompt: |
-  Read the design doc in AGENTS.md. Implement the next pending item in Phase 2.
+  Read the design doc in AGENTS.md. Implement the next pending item.
   Follow the PR workflow: branch, implement with tests (>80% coverage), 
   lint, commit, push, create draft PR, monitor CI until green,
   then reflect and update the plan before moving PR to ready.
-Plugins: github:jpshackelford/.openhands (for workflow skills)
+Plugins: github:jpshackelford/.openhands/plugins/conversation-search-workflow
 ```
+
+The plugin path `github:jpshackelford/.openhands/plugins/conversation-search-workflow` ensures the worker has access to all workflow skills.
 
 ## Reference
 
