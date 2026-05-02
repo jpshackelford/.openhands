@@ -118,20 +118,38 @@ else
 fi
 ```
 
-### Alternative: Use ohtv (more token efficient)
+### Better: Use ohtv (smarter repo detection)
 
-If you have `ohtv` installed with conversations synced:
+`ohtv` uses heuristics to find repos related to a conversation by parsing:
+- `--repo` flags in gh commands
+- Git push output (`To https://github.com/owner/repo`)
+- PR/Issue URLs in commands and outputs
+- Clone commands
+- Merge success messages
+
+This casts a wider net than just `selected_repository`.
 
 ```bash
 # Sync recent conversations (do periodically, not every check)
 ohtv sync --since $(date -u -d '4 hours ago' +%Y-%m-%dT%H:%M:%SZ) --quiet
 
-# List with repo filter (if indexed)
-ohtv list --repo conversation-search --since $(date -d '4 hours ago' +%Y-%m-%d)
+# Index repo references (required for --repo filter)
+ohtv db scan && ohtv db process refs
 
-# Check specific conversation's last event
-ohtv show CONV_ID -S  # Shows last_ts in stats
+# List conversations that touched this repo (writes + reads)
+ohtv list --repo conversation-search --since 4h
+
+# List conversations that WROTE to this repo (pushed, created PR, merged, etc.)
+ohtv list --repo conversation-search --action pushed
+
+# Check specific conversation's last event timestamp
+ohtv show CONV_ID -S  # Shows first_ts and last_ts in stats
+
+# See what repos a conversation touched
+ohtv refs CONV_ID
 ```
+
+**Key advantage:** `ohtv` finds conversations that worked on a repo even if `selected_repository` wasn't set or was set to something else.
 
 ### Decision Rule
 
