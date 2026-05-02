@@ -48,13 +48,9 @@ This skill runs automatically via cron automation. It:
 
 **This is always the first thing the orchestrator does.**
 
-Read recent messages from `#proj-conv-search-prototype` to check if a human has provided instructions since the last orchestrator run (~30 minutes ago).
+Read recent messages from `#proj-conv-search-prototype` (ID: `C0B19PK8YR0`) to check if a human has provided instructions since the last orchestrator run (~30 minutes ago).
 
-```bash
-# Read recent channel messages (last 30-60 minutes)
-# Use slack_read_channel with the channel ID
-# Filter for messages from humans (not bots)
-```
+Use `slack_read_channel` with `channel_id: C0B19PK8YR0` and filter for messages from humans (not bots) in the last ~35 minutes.
 
 ### What Counts as Human Instructions
 
@@ -280,7 +276,7 @@ PR Number: {number}
 
 ## Slack Notifications
 
-**Channel**: `#proj-conv-search-prototype`
+**Channel**: `#proj-conv-search-prototype` (ID: `C0B19PK8YR0`)
 
 After each orchestrator run, post a brief status update to Slack summarizing what's changed since the last run.
 
