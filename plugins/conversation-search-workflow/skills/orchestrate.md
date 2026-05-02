@@ -64,32 +64,65 @@ cat AGENTS.md
 
 ## Avoiding Duplicate Work
 
-Before spawning a worker, check for active conversations using the OH Cloud API:
+Before spawning a worker, check if any related conversations are still active. A conversation is considered **quiet** when its last event timestamp is older than `QUIET_PERIOD` (e.g., 10-15 minutes).
+
+### Step 1: Find related conversations
 
 ```bash
-# Check if any conversation-search conversations are currently running
-curl -s "https://app.all-hands.dev/api/v1/app-conversations/search?title__contains=conversation-search&limit=20" \
+# Get recent conversations for this repo
+curl -s "https://app.all-hands.dev/api/v1/app-conversations/search?title__contains=conversation-search&limit=10" \
   -H "Authorization: Bearer $OH_API_KEY" \
-| jq '[.items[] | select(.execution_status == "running" or .sandbox_status == "RUNNING")] | length'
-# Returns: 0 (safe to spawn) or N (N conversations still running)
-
-# To see which ones are running:
-curl -s "https://app.all-hands.dev/api/v1/app-conversations/search?title__contains=conversation-search&limit=20" \
-  -H "Authorization: Bearer $OH_API_KEY" \
-| jq '.items[] | select(.execution_status == "running" or .sandbox_status == "RUNNING") | {id: .id[:8], title: .title[:50], sandbox_status, execution_status, updated_at}'
+| jq '.items[] | {id, title: .title[:50], updated_at}'
 ```
 
-**Key status fields:**
-- `sandbox_status`: `RUNNING` (sandbox active) | `PAUSED` (sandbox stopped)
-- `execution_status`: `running` (agent working) | `null` (idle/done) | `error`
+### Step 2: Check last event timestamp for each
 
-A conversation is **active** when:
-- `execution_status == "running"` OR
-- `sandbox_status == "RUNNING"`
+```bash
+# Get last event for a specific conversation
+CONV_ID="abc123..."
+curl -s "https://app.all-hands.dev/api/v1/conversation/${CONV_ID}/events/search?sort_order=TIMESTAMP_DESC&limit=1" \
+  -H "Authorization: Bearer $OH_API_KEY" \
+| jq '.items[0].timestamp'
+# Returns: "2025-05-02T15:30:00.000000Z"
+```
 
-Only spawn if:
-- No active conversations for this repo
-- The work genuinely needs to be done (not already in progress)
+### Step 3: Calculate if quiet
+
+```bash
+QUIET_MINUTES=15
+LAST_EVENT=$(curl -s "https://app.all-hands.dev/api/v1/conversation/${CONV_ID}/events/search?sort_order=TIMESTAMP_DESC&limit=1" \
+  -H "Authorization: Bearer $OH_API_KEY" | jq -r '.items[0].timestamp // empty')
+
+if [ -z "$LAST_EVENT" ]; then
+  echo "No events - conversation never started or is brand new"
+else
+  LAST_EPOCH=$(date -d "$LAST_EVENT" +%s 2>/dev/null || echo 0)
+  NOW_EPOCH=$(date +%s)
+  DIFF_MINS=$(( (NOW_EPOCH - LAST_EPOCH) / 60 ))
+  
+  if [ "$DIFF_MINS" -gt "$QUIET_MINUTES" ]; then
+    echo "Conversation quiet for ${DIFF_MINS}m - safe to spawn new worker"
+  else
+    echo "Conversation active ${DIFF_MINS}m ago - wait before spawning"
+  fi
+fi
+```
+
+### Alternative: Use ohtv (if synced)
+
+If conversations are synced locally via `ohtv sync`, you can use ohtv for more efficient lookups:
+
+```bash
+# Sync recent conversations (do this periodically, not on every check)
+ohtv sync --since $(date -d '1 hour ago' +%Y-%m-%dT%H:%M:%S) --quiet
+
+# Check a conversation's last event timestamp
+ohtv show CONV_ID -S  # Shows first_ts and last_ts in stats
+```
+
+**Decision rule:** Only spawn if:
+- No conversation has last event within QUIET_PERIOD, OR
+- All related conversations are clearly finished (have finish action)
 
 ## Spawning Workers
 
