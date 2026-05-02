@@ -18,12 +18,14 @@ The project consists of **multiple work items**, each becoming a PR. The orchest
 ```
 
 This skill runs automatically via cron automation. It:
-1. Discovers any open PRs for the repo (there should be 0 or 1 at a time)
-2. Reads the design doc to find pending work items
-3. Decides what action is needed based on current state
-4. Spawns a worker conversation if work is available
-5. Logs what was done
-6. Exits (next check happens on next cron trigger)
+1. **CHECK FOR HUMAN INSTRUCTIONS FIRST** - Read the Slack channel for any messages from humans since the last run
+2. If human instructions exist, follow them before doing anything else
+3. Discovers any open PRs for the repo (there should be 0 or 1 at a time)
+4. Reads the design doc to find pending work items
+5. Decides what action is needed based on current state
+6. Spawns a worker conversation if work is available
+7. Posts status update to Slack
+8. Exits (next check happens on next cron trigger)
 
 ## Workflow Overview
 
@@ -31,14 +33,68 @@ This skill runs automatically via cron automation. It:
 ┌──────────────────────────────────────────────────────────────────┐
 │  ORCHESTRATOR WAKE-UP                                            │
 ├──────────────────────────────────────────────────────────────────┤
-│  1. Check PR status with lxa pr list (visibility)               │
-│  2. Check design doc for pending work items                      │
-│  3. Decide: Is there work to dispatch?                           │
-│  4. If yes: spawn worker conversation via OH API                 │
-│  5. Log action taken                                             │
-│  6. Exit                                                         │
+│  1. READ SLACK for human instructions (FIRST!)                  │
+│  2. If human instructions found → follow them, then exit        │
+│  3. Check PR status with lxa pr list (visibility)               │
+│  4. Check design doc for pending work items                      │
+│  5. Decide: Is there work to dispatch?                           │
+│  6. If yes: spawn worker conversation via OH API                 │
+│  7. Post status update to Slack                                  │
+│  8. Exit                                                         │
 └──────────────────────────────────────────────────────────────────┘
 ```
+
+## Step 1: Check for Human Instructions
+
+**This is always the first thing the orchestrator does.**
+
+Read recent messages from `#proj-conv-search-prototype` to check if a human has provided instructions since the last orchestrator run (~30 minutes ago).
+
+```bash
+# Read recent channel messages (last 30-60 minutes)
+# Use slack_read_channel with the channel ID
+# Filter for messages from humans (not bots)
+```
+
+### What Counts as Human Instructions
+
+Look for messages from humans (not bot users) that contain actionable instructions:
+
+**Examples of instructions to follow:**
+- "Pause the workflow until tomorrow"
+- "Skip the current PR and move to the next work item"  
+- "Don't merge PR #5 yet, waiting for @alice to review"
+- "Focus on fixing the test failures first"
+- "Stop working on conversation-search for now"
+- "Resume normal operations"
+- "Prioritize the caching work item next"
+
+**Ignore these (not instructions):**
+- Bot messages (from the orchestrator itself)
+- Reactions/emoji only
+- General discussion not directed at the orchestrator
+- Questions without actionable requests
+
+### If Human Instructions Found
+
+1. **Acknowledge** - Reply in the channel confirming you received the instruction
+2. **Follow** - Execute what was requested
+3. **Report** - Post what you did in response
+4. **Exit** - Don't proceed with normal workflow this cycle
+
+Example response:
+```
+📋 *Following Human Instructions*
+
+Received from @jpshackelford:
+> "Pause the workflow until the security review is complete"
+
+✅ Pausing workflow. Will resume when instructed.
+```
+
+### If No Instructions Found
+
+Proceed with normal workflow (Step 2 onwards).
 
 ## Gather State
 
