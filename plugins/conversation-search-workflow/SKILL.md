@@ -4,7 +4,7 @@ Automated PR workflow for the [conversation-search](https://github.com/OpenHands
 
 ## Overview
 
-This plugin provides skills for an automated development workflow, leveraging [lxa](https://github.com/jpshackelford/lxa) (Long Execution Agent) for heavy lifting:
+This plugin provides skills for an automated development workflow:
 
 ```
 Design Doc → Implementation → CI → Review → Address Feedback → Merge
@@ -14,17 +14,20 @@ Design Doc → Implementation → CI → Review → Address Feedback → Merge
 
 The workflow is driven by:
 1. **Orchestrator automation** - Cron job that wakes up periodically to check state and dispatch work
-2. **lxa commands** - Handle implementation, refinement, and review response
-3. **Worker conversations** - Spawned via OH API for specific tasks when needed
+2. **Worker conversations** - Spawned via OH API to do focused tasks (implement, review, merge)
+3. **lxa for visibility** - `lxa pr list` for quick status checks
 
-## Key lxa Commands
+## lxa for Visibility
 
-| Command | Purpose |
-|---------|---------|
-| `lxa pr list "Owner/repo#N"` | Quick PR status with history codes |
-| `lxa implement --loop --refine --auto-merge` | Full workflow: implement → review → merge |
-| `lxa refine URL --phase respond` | Address review comments |
-| `lxa refine URL --auto-merge` | Address comments then merge |
+Use `lxa` to quickly see what's happening:
+
+```bash
+# Quick PR status with history codes
+lxa pr list "OpenHands/conversation-search#1"
+
+# Output: oCR green ready 2
+# Meaning: opened → Changes requested → Review round, CI green, 2 unresolved threads
+```
 
 ## Available Skills
 
