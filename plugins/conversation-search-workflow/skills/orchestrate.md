@@ -1,3 +1,10 @@
+---
+name: orchestrate
+description: Main orchestration logic - assess state and dispatch work
+triggers:
+  - /orchestrate
+---
+
 # Orchestrate PR Workflow
 
 Main orchestration logic for the conversation-search PR workflow. This skill is designed to run as a scheduled automation that wakes up periodically to assess state and dispatch work.

@@ -1,3 +1,11 @@
+---
+name: prepare-and-merge
+description: Final merge preparation and execution
+triggers:
+  - /prepare-merge
+  - /merge
+---
+
 # Prepare and Merge
 
 Final merge preparation and execution. Used when PR has met merge criteria (good rating, 3x acceptable, or acceptable with spurious issues).

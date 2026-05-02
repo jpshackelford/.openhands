@@ -1,3 +1,10 @@
+---
+name: spawn-conversation
+description: Start a new OpenHands conversation and verify it's running
+triggers:
+  - /spawn-conversation
+---
+
 # Spawn Conversation
 
 Start a new OpenHands conversation via the API. Verify it started and is running, then return control. Do NOT monitor for completion - that's the orchestrator's job on subsequent wake-ups.

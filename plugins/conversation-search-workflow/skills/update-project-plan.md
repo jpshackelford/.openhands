@@ -1,3 +1,11 @@
+---
+name: update-project-plan
+description: Reflect on learnings and update project documentation
+triggers:
+  - /update-plan
+  - /reflect
+---
+
 # Update Project Plan
 
 Reflect on work done and update project documentation with learnings. This skill is used at key checkpoints:

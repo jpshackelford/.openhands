@@ -1,3 +1,11 @@
+---
+name: pr-workflow-status
+description: Get comprehensive PR status for workflow decisions
+triggers:
+  - /pr-workflow-status
+  - /pr-status
+---
+
 # PR Workflow Status
 
 Gather comprehensive status of PR(s) for a repository to inform workflow decisions. Uses `lxa` for efficient visualization and `gh` CLI for details.
