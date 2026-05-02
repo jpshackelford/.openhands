@@ -72,7 +72,7 @@ Use `ohtv list` with the `--idle` flag to see active vs quiet conversations at a
 
 ```bash
 # Sync recent conversations first (--since requires ISO date format)
-ohtv sync --since $(date -u -d '4 hours ago' +%Y-%m-%dT%H:%M:%S) --quiet
+ohtv sync --since $(date -u -d '4 hours ago' +%Y-%m-%dT%H:%M:%S)
 
 # Check conversations for this repo with idle time
 # Red = active (< threshold), Green = quiet (>= threshold)
