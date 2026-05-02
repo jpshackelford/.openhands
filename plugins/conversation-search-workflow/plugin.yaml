@@ -1,0 +1,57 @@
+name: conversation-search-workflow
+version: 0.1.0
+description: |
+  Automated PR workflow for the conversation-search project.
+  
+  Provides skills for:
+  - Spawning worker conversations via OH API
+  - Checking PR/CI/review status
+  - Orchestrating the implementation→review→merge cycle
+  - Updating project plans with learnings
+
+author: jpshackelford
+repository: https://github.com/jpshackelford/.openhands
+
+# Skills provided by this plugin
+skills:
+  - name: spawn-conversation
+    path: skills/spawn-conversation.md
+    triggers:
+      - /spawn-conversation
+    description: Start a new OpenHands conversation and verify it's running
+    
+  - name: pr-workflow-status
+    path: skills/pr-workflow-status.md
+    triggers:
+      - /pr-workflow-status
+      - /pr-status
+    description: Get comprehensive PR status for workflow decisions
+    
+  - name: orchestrate
+    path: skills/orchestrate.md
+    triggers:
+      - /orchestrate
+    description: Main orchestration logic - assess state and dispatch work
+    
+  - name: update-project-plan
+    path: skills/update-project-plan.md
+    triggers:
+      - /update-plan
+      - /reflect
+    description: Reflect on learnings and update project documentation
+    
+  - name: prepare-and-merge
+    path: skills/prepare-and-merge.md
+    triggers:
+      - /prepare-merge
+      - /merge
+    description: Final merge preparation and execution
+
+# Environment variables this plugin expects
+env:
+  - name: OH_API_KEY
+    description: OpenHands API key for spawning conversations
+    required: true
+  - name: GITHUB_TOKEN
+    description: GitHub token for gh CLI operations
+    required: true
