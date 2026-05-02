@@ -64,65 +64,80 @@ cat AGENTS.md
 
 ## Avoiding Duplicate Work
 
-Before spawning a worker, check if any related conversations are still active. A conversation is considered **quiet** when its last event timestamp is older than `QUIET_PERIOD` (e.g., 10-15 minutes).
+Before spawning a worker, check if any related conversations are still active. A conversation is **quiet** when its last event timestamp is older than `QUIET_PERIOD` (e.g., 10-15 minutes).
 
-### Step 1: Find related conversations
+### API Capabilities
 
-```bash
-# Get recent conversations for this repo
-curl -s "https://app.all-hands.dev/api/v1/app-conversations/search?title__contains=conversation-search&limit=10" \
-  -H "Authorization: Bearer $OH_API_KEY" \
-| jq '.items[] | {id, title: .title[:50], updated_at}'
-```
+The OpenHands API supports:
+- `updated_at__gte` - filter conversations updated after timestamp ✅
+- `title__contains` - filter by title substring ✅
+- `selected_repository` - returned but **not filterable** (filter client-side)
+- Per-conversation event queries with `sort_order=TIMESTAMP_DESC&limit=1`
 
-### Step 2: Check last event timestamp for each
-
-```bash
-# Get last event for a specific conversation
-CONV_ID="abc123..."
-curl -s "https://app.all-hands.dev/api/v1/conversation/${CONV_ID}/events/search?sort_order=TIMESTAMP_DESC&limit=1" \
-  -H "Authorization: Bearer $OH_API_KEY" \
-| jq '.items[0].timestamp'
-# Returns: "2025-05-02T15:30:00.000000Z"
-```
-
-### Step 3: Calculate if quiet
+### Strategy: Find Recently Active Conversations
 
 ```bash
+# Constants
+LOOKBACK_HOURS=4
 QUIET_MINUTES=15
-LAST_EVENT=$(curl -s "https://app.all-hands.dev/api/v1/conversation/${CONV_ID}/events/search?sort_order=TIMESTAMP_DESC&limit=1" \
-  -H "Authorization: Bearer $OH_API_KEY" | jq -r '.items[0].timestamp // empty')
+REPO_FILTER="conversation-search"
 
-if [ -z "$LAST_EVENT" ]; then
-  echo "No events - conversation never started or is brand new"
-else
-  LAST_EPOCH=$(date -d "$LAST_EVENT" +%s 2>/dev/null || echo 0)
-  NOW_EPOCH=$(date +%s)
-  DIFF_MINS=$(( (NOW_EPOCH - LAST_EPOCH) / 60 ))
+# Step 1: Get all conversations updated in last N hours
+SINCE=$(date -u -d "${LOOKBACK_HOURS} hours ago" +%Y-%m-%dT%H:%M:%SZ)
+CONVS=$(curl -s "https://app.all-hands.dev/api/v1/app-conversations/search?updated_at__gte=${SINCE}&limit=50" \
+  -H "Authorization: Bearer $OH_API_KEY")
+
+# Step 2: Filter to our repo (by selected_repository or title)
+MATCHING=$(echo "$CONVS" | jq -r ".items[] | select(.selected_repository == \"OpenHands/${REPO_FILTER}\" or (.title | contains(\"${REPO_FILTER}\"))) | .id")
+
+# Step 3: For each, check last event timestamp
+NOW_EPOCH=$(date +%s)
+ACTIVE_COUNT=0
+
+for CONV_ID in $MATCHING; do
+  LAST_EVENT=$(curl -s "https://app.all-hands.dev/api/v1/conversation/${CONV_ID}/events/search?sort_order=TIMESTAMP_DESC&limit=1" \
+    -H "Authorization: Bearer $OH_API_KEY" | jq -r '.items[0].timestamp // empty')
   
-  if [ "$DIFF_MINS" -gt "$QUIET_MINUTES" ]; then
-    echo "Conversation quiet for ${DIFF_MINS}m - safe to spawn new worker"
-  else
-    echo "Conversation active ${DIFF_MINS}m ago - wait before spawning"
+  if [ -n "$LAST_EVENT" ]; then
+    LAST_EPOCH=$(date -d "$LAST_EVENT" +%s 2>/dev/null || echo 0)
+    DIFF_MINS=$(( (NOW_EPOCH - LAST_EPOCH) / 60 ))
+    
+    if [ "$DIFF_MINS" -lt "$QUIET_MINUTES" ]; then
+      echo "ACTIVE: ${CONV_ID:0:8} - last event ${DIFF_MINS}m ago"
+      ACTIVE_COUNT=$((ACTIVE_COUNT + 1))
+    else
+      echo "QUIET:  ${CONV_ID:0:8} - last event ${DIFF_MINS}m ago"
+    fi
   fi
+done
+
+if [ "$ACTIVE_COUNT" -eq 0 ]; then
+  echo "✅ No active conversations - safe to spawn new worker"
+else
+  echo "⏳ ${ACTIVE_COUNT} active conversation(s) - wait before spawning"
 fi
 ```
 
-### Alternative: Use ohtv (if synced)
+### Alternative: Use ohtv (more token efficient)
 
-If conversations are synced locally via `ohtv sync`, you can use ohtv for more efficient lookups:
+If you have `ohtv` installed with conversations synced:
 
 ```bash
-# Sync recent conversations (do this periodically, not on every check)
-ohtv sync --since $(date -d '1 hour ago' +%Y-%m-%dT%H:%M:%S) --quiet
+# Sync recent conversations (do periodically, not every check)
+ohtv sync --since $(date -u -d '4 hours ago' +%Y-%m-%dT%H:%M:%SZ) --quiet
 
-# Check a conversation's last event timestamp
-ohtv show CONV_ID -S  # Shows first_ts and last_ts in stats
+# List with repo filter (if indexed)
+ohtv list --repo conversation-search --since $(date -d '4 hours ago' +%Y-%m-%d)
+
+# Check specific conversation's last event
+ohtv show CONV_ID -S  # Shows last_ts in stats
 ```
 
-**Decision rule:** Only spawn if:
-- No conversation has last event within QUIET_PERIOD, OR
-- All related conversations are clearly finished (have finish action)
+### Decision Rule
+
+Only spawn if:
+- No conversation with last event within QUIET_PERIOD (e.g., 15 min)
+- OR all related conversations have a finish action (explicitly done)
 
 ## Spawning Workers
 
