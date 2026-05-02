@@ -15,16 +15,29 @@ This skill runs automatically via cron automation. It:
 4. Logs what was done
 5. Exits (next check happens on next cron trigger)
 
+## Leveraging lxa
+
+`lxa` (Long Execution Agent) provides powerful commands that handle much of the workflow:
+
+| Command | Purpose |
+|---------|---------|
+| `lxa pr list "Owner/repo#N"` | Quick PR status with history codes |
+| `lxa implement --loop --refine` | Full implementation through refinement |
+| `lxa refine URL --phase respond` | Address review comments |
+| `lxa refine URL --auto-merge` | Address comments and merge when done |
+
+**Consider using `lxa implement --loop --refine --auto-merge`** for the full workflow in a single command!
+
 ## Workflow Overview
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
 │  ORCHESTRATOR WAKE-UP                                            │
 ├──────────────────────────────────────────────────────────────────┤
-│  1. Check design doc / plan for pending work items               │
-│  2. Check for any open PRs and their status                      │
+│  1. Check PR status with lxa pr list                             │
+│  2. Check design doc for pending work items                      │
 │  3. Decide: Is there work to dispatch?                           │
-│  4. If yes: spawn appropriate worker conversation                │
+│  4. If yes: spawn appropriate worker (or run lxa command)        │
 │  5. Log action taken                                             │
 │  6. Exit                                                         │
 └──────────────────────────────────────────────────────────────────┘
@@ -34,170 +47,150 @@ This skill runs automatically via cron automation. It:
 
 ### Gather State
 
-First, understand current state:
-
 ```bash
+# Quick PR status
+lxa pr list "OpenHands/conversation-search#1"
+# Output: oCR green ready 2 - shows history, CI, state, unresolved threads
+
 # Check for open PRs
 gh pr list --repo OpenHands/conversation-search --state open
 
-# For each PR, get status
-gh pr view PR_NUMBER --repo OpenHands/conversation-search --json isDraft,statusCheckRollup,reviews
-
-# Read the design doc / AGENTS.md for pending work items
-cat AGENTS.md  # or wherever the plan lives
+# Read the design doc for pending work items
+cat AGENTS.md
 ```
 
 ### Decision Tree
 
 | Current State | Action |
 |---------------|--------|
-| No open PRs + pending work items in plan | Spawn `/implement-work-item` worker |
+| No open PRs + pending work items | Spawn implementation worker |
 | PR exists, draft, CI failing | Wait (worker may still be active) |
 | PR exists, draft, CI green | Wait (worker finishing up) |
-| PR exists, ready, awaiting review | Wait (review bot running) |
-| PR exists, ready, review done | Evaluate review outcome... |
-| → Good taste rating | Spawn `/prepare-and-merge` worker |
-| → Acceptable + issues spurious | Spawn `/prepare-and-merge` worker |
-| → 3x Acceptable + solid code | Spawn `/prepare-and-merge` worker |
-| → Otherwise | Spawn `/address-pr-review` worker |
-| PR merged, more work items | Spawn `/implement-work-item` for next item |
+| PR exists, ready, 💬 = 0 | Check if merge criteria met |
+| PR exists, ready, 💬 > 0 | Run `lxa refine URL --phase respond` |
+| → Good taste rating | Run `lxa refine URL --auto-merge` or spawn merge worker |
+| → 3x Acceptable + solid | Spawn merge worker |
+| → Otherwise | Spawn review worker or run `lxa refine` |
+| PR merged, more work items | Spawn implementation worker for next item |
 | PR merged, no more items | Log completion, exit |
 
 ### Avoiding Duplicate Work
 
-Before spawning a worker:
-1. Check if there's a recent conversation for this repo (within last hour)
-2. If so, check its `execution_status` - if `running`, don't spawn another
+Before spawning:
+1. Check `lxa job list --running` for active background jobs
+2. Check recent conversations via API
 3. Only spawn if no active worker exists
 
 ```bash
-# Check recent conversations
-curl -s "https://app.all-hands.dev/api/v1/app-conversations/search?title__contains=conversation-search&created_at__gte=2024-01-01T00:00:00Z" \
+# Check for running lxa jobs
+lxa job list --running
+
+# Check recent OH conversations
+curl -s "https://app.all-hands.dev/api/v1/app-conversations/search?title__contains=conversation-search" \
   -H "X-Access-Token: $OH_API_KEY" \
-| jq '.items[] | {id, title, execution_status, created_at}'
+| jq '.items[:5] | .[] | {id, title, execution_status, created_at}'
 ```
 
 ## Spawning Workers
 
-Use `/spawn-conversation` skill to start worker conversations.
+### Option A: Use lxa Commands Directly
 
-### Implementation Worker
+For simple cases, run lxa commands directly from the orchestrator:
 
+```bash
+# Full implementation through refinement and merge
+lxa implement --loop --refine --auto-merge
+
+# Just address review comments
+lxa refine https://github.com/OpenHands/conversation-search/pull/1 --phase respond
+
+# Run in background
+lxa refine URL --background --job-name pr1-review
+```
+
+### Option B: Spawn OH Conversations
+
+For more control, use `/spawn-conversation` skill:
+
+**Implementation Worker:**
 ```
 Repository: OpenHands/conversation-search
 Title: [Implementation] {Work Item Title}
 Prompt: |
-  You are implementing a work item for the conversation-search project.
+  Implement the next pending item from AGENTS.md.
   
-  1. Read AGENTS.md to understand the project and find the next pending item
-  2. Create a feature branch from main (ensure main is up-to-date)
-  3. Implement the feature with tests (target >80% coverage for new code)
-  4. Run lints and type checks, fix any issues
-  5. Commit with clear messages, push, create a DRAFT PR
-  6. Monitor CI, fix any failures
-  7. Once CI is green, REFLECT:
-     - Update AGENTS.md: mark item complete, note learnings
-     - Clarify next steps based on what you learned
-     - Commit these plan updates
-  8. Move PR from draft to ready (triggers review bot)
-  9. Exit - review handling is a separate conversation
+  1. Read AGENTS.md, find next pending item
+  2. Create feature branch from main
+  3. Implement with tests (>80% coverage)
+  4. Lint, typecheck, fix issues
+  5. Commit, push, create DRAFT PR
+  6. Monitor CI, fix failures
+  7. Once CI green, REFLECT and update AGENTS.md
+  8. Move PR to ready (triggers review)
+  9. Exit
   
 Plugins: github:jpshackelford/.openhands/plugins/conversation-search-workflow
 ```
 
-### Review Worker
-
+**Review Worker:**
 ```
 Repository: OpenHands/conversation-search  
-Title: [Review Round] PR #{number} - {title}
+Title: [Review Round] PR #{number}
 Prompt: |
-  You are addressing review feedback on PR #{number}.
+  Address review feedback on PR #{number}.
   
-  1. Clone the repo and checkout the PR branch
-  2. IMMEDIATELY set PR back to draft mode: gh pr ready PR_NUMBER --undo
-  3. Read ALL review comments and threads carefully
-  4. For each piece of feedback, decide:
-     - Accept and implement (most suggestions improve code quality)
-     - Reject only if it significantly increases scope/complexity without clear benefit
-  5. Group related changes into logical commits
-  6. For each commit:
-     - Make the change
-     - Run CI checks locally if possible
-     - Commit with clear message referencing the feedback
-     - Push
-     - Verify CI passes before moving to next commit
-  7. As you resolve each review thread:
-     - Reply explaining what you did (or why you declined)
-     - Mark thread as resolved
-  8. After all feedback addressed, REFLECT:
-     - Did you learn anything that impacts the overall plan?
-     - If so, update AGENTS.md and commit
-  9. Move PR back to ready: gh pr ready PR_NUMBER
-  10. Exit - next review round is a separate conversation
+  1. Checkout PR branch
+  2. Set PR back to draft: gh pr ready {number} --undo
+  3. Read ALL review comments
+  4. For each: accept and implement (or explain why not)
+  5. Commit changes, verify CI after each
+  6. Reply to and resolve review threads
+  7. REFLECT: update AGENTS.md if learnings impact plan
+  8. Move PR back to ready
+  9. Exit
 
-Plugins: github:jpshackelford/.openhands/plugins/conversation-search-workflow
 PR Number: {number}
 ```
 
-### Merge Worker
-
+**Merge Worker:**
 ```
 Repository: OpenHands/conversation-search
-Title: [Merge] PR #{number} - {title}
+Title: [Merge] PR #{number}
 Prompt: |
-  You are preparing PR #{number} for merge.
+  Prepare and merge PR #{number}.
   
-  1. Clone the repo and checkout the PR branch
-  2. Study the full PR diff holistically
-  3. Read all review history to understand the evolution
-  4. Update PR description to reflect final state:
-     - What was implemented
-     - Key decisions made during review
-     - Any notable technical details
-  5. Craft a good conventional commit message for squash-merge:
-     - feat: / fix: / chore: / refactor: as appropriate
-     - Clear summary line
-     - Body with relevant details
-  6. Squash and merge: gh pr merge PR_NUMBER --squash --body "commit message"
-  7. Update AGENTS.md:
-     - Mark this work item as complete
-     - Note the PR number for reference
-     - Identify the next work item to tackle
-  8. Push the plan update to main
-  9. Exit
+  1. Study full PR diff
+  2. Update PR description
+  3. Craft conventional commit message
+  4. Squash and merge
+  5. Update AGENTS.md: mark complete, identify next item
+  6. Push to main
+  7. Exit
 
-Plugins: github:jpshackelford/.openhands/plugins/conversation-search-workflow
 PR Number: {number}
 ```
 
 ## Logging
 
-After each action, log what was done:
-
 ```
 [Orchestrator] 2024-01-15T10:30:00Z
-State: PR #42 ready, review done, 2x acceptable ratings
-Action: Spawned review worker (conversation: abc123)
-Reason: Need 3rd review round - not yet at merge criteria
-Next check: ~30 minutes (next cron trigger)
+State: PR #1 - oCR green ready 💬2
+Action: Running lxa refine --phase respond --background
+Reason: 2 unresolved review threads need addressing
+Next check: ~30 minutes
 ```
 
 ## Exit Conditions
 
 Always exit after:
-- Spawning a worker (one action per wake-up)
-- Determining no action needed (everything is in expected state)
-- Encountering an error that needs human attention
+- Starting a worker/job (one action per wake-up)
+- Determining no action needed
+- Encountering an error needing attention
 
-Do NOT:
-- Wait for spawned workers to complete
-- Take multiple actions in one wake-up
-- Loop continuously
+## Cron Schedule
 
-## Cron Schedule Recommendation
+```
+*/30 * * * *  # Every 30 minutes
+```
 
-Run every 15-30 minutes:
-- `*/15 * * * *` - Every 15 minutes (more responsive)
-- `*/30 * * * *` - Every 30 minutes (less resource usage)
-
-Adjust based on how fast reviews typically come back.
+Adjust based on expected review turnaround time.

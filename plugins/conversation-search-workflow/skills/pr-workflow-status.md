@@ -1,6 +1,6 @@
 # PR Workflow Status
 
-Gather comprehensive status of PR(s) for a repository to inform workflow decisions. Uses GitHub CLI (`gh`) for efficient querying.
+Gather comprehensive status of PR(s) for a repository to inform workflow decisions. Uses `lxa` for efficient visualization and `gh` CLI for details.
 
 ## Usage
 
@@ -12,91 +12,103 @@ Then provide:
 - **repository**: GitHub repo (e.g., `OpenHands/conversation-search`)
 - **pr_number** (optional): Specific PR to check, or check all open PRs
 
-## What to Gather
+## Using lxa pr list
 
-### 1. List Open PRs
+The `lxa pr list` command provides a compact view of PR status:
 
 ```bash
-gh pr list --repo OWNER/REPO --state open --json number,title,isDraft,headRefName,author,createdAt,updatedAt
+# List specific PR(s)
+lxa pr list "OpenHands/conversation-search#1"
+
+# List all open PRs for a repo (need to add to board first)
+lxa repo add OpenHands/conversation-search
+lxa pr list --all
 ```
 
-### 2. For Each PR, Get Details
+**Output columns:**
+- **History**: Compact codes showing PR lifecycle
+  - `o` = opened
+  - `C` = changes requested
+  - `F` = fixes pushed
+  - `c` = comment
+  - `A` = approved
+  - `m` = merged
+  - `k` = killed/closed
+- **CI**: green/red/pending/conflict
+- **State**: draft, ready, merged, closed
+- **💬**: Count of unresolved review threads
+- **Age/Last**: Time since creation and last activity
 
-```bash
-gh pr view PR_NUMBER --repo OWNER/REPO --json number,title,state,isDraft,body,reviews,comments,statusCheckRollup,labels,headRefName,mergeable
+**Example:**
+```
+  Repo                            PR   History   CI      State   💬   Age   Last
+ ───────────────────────────────────────────────────────────────────────────────────
+  OpenHands/conversation-search   #1   oCR       green   ready    2   18h   15h ago
 ```
 
-### 3. Check CI Status
+This tells us: PR was opened, got Changes requested, is in Review round, CI is green, 2 unresolved threads.
+
+## Using lxa review
+
+See what needs review attention:
 
 ```bash
+lxa review --repo OpenHands/conversation-search
+```
+
+## Getting Detailed Information
+
+For deeper analysis, use `gh`:
+
+```bash
+# Full PR details
+gh pr view PR_NUMBER --repo OWNER/REPO
+
+# With all comments
+gh pr view PR_NUMBER --repo OWNER/REPO --comments
+
+# CI check status
 gh pr checks PR_NUMBER --repo OWNER/REPO
 ```
 
-Look for:
-- All checks passing ✓
-- Any checks failing ✗
-- Checks still running (pending)
-
-### 4. Read Review Comments
-
-```bash
-gh pr view PR_NUMBER --repo OWNER/REPO --comments
-```
+## Reading Review Comments
 
 Read through the reviews and comments to understand:
 - **Taste rating**: Is the reviewer saying "good taste", "elegant", "acceptable", "needs work"?
-- **Review rounds**: How many review cycles have occurred? (Count review submissions followed by author responses)
-- **Outstanding issues**: Are there unresolved review threads?
+- **Review rounds**: The history code shows this (e.g., `oCFCFA` = 2 review rounds with fixes)
+- **Outstanding issues**: The 💬 column shows unresolved thread count
 - **Reviewer sentiment**: Is the code close to merge-ready or needs significant rework?
 
-### 5. Determine PR Phase
+## Determine PR Phase
 
-Based on gathered information, determine which phase the PR is in:
+Based on gathered information:
 
 | Phase | Indicators |
 |-------|------------|
 | **Implementation** | PR is draft, author still pushing commits |
-| **CI Stabilization** | PR exists, CI failing or running |
-| **Awaiting Review** | PR ready (not draft), CI green, no reviews yet |
-| **Review In Progress** | Reviews submitted, author hasn't responded yet |
-| **Addressing Review** | Author responded to review, may be pushing fixes |
-| **Ready for Merge** | Good/acceptable rating, all threads resolved, CI green |
+| **CI Stabilization** | PR exists, CI red or pending |
+| **Awaiting Review** | PR ready, CI green, no reviews yet |
+| **Review In Progress** | History shows `C` (changes requested), 💬 > 0 |
+| **Addressing Review** | Author pushing fixes (history shows `F` after `C`) |
+| **Ready for Merge** | Good/acceptable rating, 💬 = 0, CI green |
 
-## Output
+## Example Workflow
 
-After gathering information, summarize:
+```bash
+# Quick status check
+lxa pr list "OpenHands/conversation-search#1"
 
-1. **PR State**: Draft or Ready
-2. **CI Status**: Passing, Failing, Pending
-3. **Review Status**: No reviews, Reviews pending response, All addressed
-4. **Taste Assessment**: Based on reviewer comments (good/acceptable/needs-work)
-5. **Review Round Count**: How many review cycles
-6. **Phase**: Which workflow phase this PR is in
-7. **Recommended Action**: What should happen next
+# Output: oCR green ready 2 - needs attention (2 unresolved threads)
 
-## Example Output
+# Get details on what needs addressing
+gh pr view 1 --repo OpenHands/conversation-search --comments
 
-```
-PR #42: Implement Ingestion Pipeline
-
-State: Ready (not draft)
-CI: ✓ All checks passing
-Reviews: 2 reviews submitted
-  - Round 1: Acceptable - addressed style issues, refactored chunking
-  - Round 2: Acceptable - minor nits about naming
-Taste: Acceptable (2 rounds)
-Outstanding Threads: 0 unresolved
-Phase: Ready for Merge (3rd acceptable would trigger merge)
-
-Recommended Action: 
-Since we have 2 acceptable ratings and no outstanding issues,
-one more review round with acceptable rating would meet merge criteria.
-Current state is good - if next review is acceptable, proceed to merge.
+# Read the review comments, understand what's being asked
+# Determine: is this good taste, acceptable, or needs work?
 ```
 
 ## Notes
 
-- Use `gh auth status` to verify GitHub CLI is authenticated
-- The `--json` flag gives structured output for programmatic use
-- For reading comments/reviews, the plain text output is often clearer for understanding sentiment
-- Trust your natural language understanding for taste ratings and sentiment - no special parsing needed
+- `lxa` requires repos to be added to a board for `--all` listing, or use explicit PR refs
+- The history codes in `lxa pr list` tell the story of the PR at a glance
+- Trust your natural language understanding for taste ratings - no special parsing needed

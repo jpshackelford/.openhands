@@ -4,7 +4,7 @@ Automated PR workflow for the [conversation-search](https://github.com/OpenHands
 
 ## Overview
 
-This plugin provides skills for an automated development workflow:
+This plugin provides skills for an automated development workflow, leveraging [lxa](https://github.com/jpshackelford/lxa) (Long Execution Agent) for heavy lifting:
 
 ```
 Design Doc → Implementation → CI → Review → Address Feedback → Merge
@@ -14,14 +14,24 @@ Design Doc → Implementation → CI → Review → Address Feedback → Merge
 
 The workflow is driven by:
 1. **Orchestrator automation** - Cron job that wakes up periodically to check state and dispatch work
-2. **Worker conversations** - Focused conversations spawned to do specific tasks (implement, review, merge)
+2. **lxa commands** - Handle implementation, refinement, and review response
+3. **Worker conversations** - Spawned via OH API for specific tasks when needed
+
+## Key lxa Commands
+
+| Command | Purpose |
+|---------|---------|
+| `lxa pr list "Owner/repo#N"` | Quick PR status with history codes |
+| `lxa implement --loop --refine --auto-merge` | Full workflow: implement → review → merge |
+| `lxa refine URL --phase respond` | Address review comments |
+| `lxa refine URL --auto-merge` | Address comments then merge |
 
 ## Available Skills
 
 | Skill | Trigger | Purpose |
 |-------|---------|---------|
 | [Spawn Conversation](skills/spawn-conversation.md) | `/spawn-conversation` | Start OH conversation via API |
-| [PR Workflow Status](skills/pr-workflow-status.md) | `/pr-workflow-status` | Get comprehensive PR state |
+| [PR Workflow Status](skills/pr-workflow-status.md) | `/pr-workflow-status` | Get PR state using lxa + gh |
 | [Orchestrate](skills/orchestrate.md) | `/orchestrate` | Main decision loop |
 | [Update Project Plan](skills/update-project-plan.md) | `/update-plan` | Reflect and update docs |
 | [Prepare and Merge](skills/prepare-and-merge.md) | `/prepare-merge` | Final merge workflow |
