@@ -222,6 +222,98 @@ Plugins: github:jpshackelford/.openhands/plugins/conversation-search-workflow@ad
 PR Number: {number}
 ```
 
+## Slack Notifications
+
+**Channel**: `#proj-conv-search-prototype`
+
+After each orchestrator run, post a brief status update to Slack summarizing what's changed since the last run.
+
+### Status Update Format
+
+Use `slack_send_message` to post updates. Always include links to:
+- The **PR** being worked on: `https://github.com/OpenHands/conversation-search/pull/{number}`
+- Any **conversation** that was spawned: `https://app.all-hands.dev/conversations/{id}`
+
+```
+🤖 *Orchestrator Check-in*
+
+*Current State:*
+• <https://github.com/OpenHands/conversation-search/pull/5|PR #5>: `oCR green ready 💬2` (2 unresolved threads)
+• Work items remaining: 3 of 7
+
+*Action Taken:*
+Spawned review worker to address feedback
+→ <https://app.all-hands.dev/conversations/{conv_id}|Watch conversation>
+
+*What Changed:*
+• PR moved from draft → ready
+• CI now passing (was failing)
+• 1 review thread resolved
+
+_Next check in ~30 minutes_
+```
+
+### When Spawning a Conversation
+
+Always include:
+1. What type of worker was launched (implementation/review/merge)
+2. What it will do
+3. Link to the **PR**: `https://github.com/OpenHands/conversation-search/pull/{number}`
+4. Link to the **conversation**: `https://app.all-hands.dev/conversations/{conversation_id}`
+
+Example for review worker:
+```
+🚀 *Launched: Review Worker*
+
+Addressing feedback on <https://github.com/OpenHands/conversation-search/pull/5|PR #5: Add semantic search>
+
+📎 <https://app.all-hands.dev/conversations/abc123def456|Watch progress>
+```
+
+Example for implementation worker:
+```
+🚀 *Launched: Implementation Worker*
+
+Starting work on: "Add semantic search endpoint"
+(No PR yet - will create one)
+
+📎 <https://app.all-hands.dev/conversations/abc123def456|Watch progress>
+```
+
+Example for merge worker:
+```
+🚀 *Launched: Merge Worker*
+
+Preparing to merge <https://github.com/OpenHands/conversation-search/pull/5|PR #5: Add semantic search>
+
+📎 <https://app.all-hands.dev/conversations/abc123def456|Watch progress>
+```
+
+### When No Action Needed
+
+Still post a brief update so we know it ran:
+```
+✅ *Orchestrator Check-in* - All quiet
+
+• <https://github.com/OpenHands/conversation-search/pull/5|PR #5> is in review (waiting for reviewer)
+• No active conversations found
+• Nothing to do this cycle
+
+_Next check in ~30 minutes_
+```
+
+### When Project Completes
+
+```
+🎉 *Project Complete!*
+
+All work items have been implemented and merged.
+• Total PRs merged: 7
+• Project duration: 3 days
+
+See AGENTS.md for the full summary.
+```
+
 ## Logging
 
 After each action, log what was done:

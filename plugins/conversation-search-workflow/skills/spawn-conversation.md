@@ -93,9 +93,31 @@ curl -s "https://app.all-hands.dev/api/v1/app-conversations?ids=CONVERSATION_ID"
 
 Valid execution statuses: `idle`, `running`, `paused`, `waiting_for_confirmation`, `finished`, `error`, `stuck`
 
-### Step 4: Return and Exit
+### Step 4: Post to Slack
 
-Once verified the conversation started:
+Once verified the conversation started, post a notification to `#proj-conv-search-prototype`:
+
+```
+🚀 *Launched: {Worker Type}*
+
+{Description of what the worker will do}
+{If PR exists: Link to PR}
+
+📎 <https://app.all-hands.dev/conversations/{conversation_id}|Watch progress>
+```
+
+Example:
+```
+🚀 *Launched: Review Worker*
+
+Addressing feedback on <https://github.com/OpenHands/conversation-search/pull/5|PR #5: Add semantic search>
+
+📎 <https://app.all-hands.dev/conversations/abc123|Watch progress>
+```
+
+### Step 5: Return and Exit
+
+Once verified the conversation started and Slack notification sent:
 1. Report the `conversation_url` (e.g., `https://app.all-hands.dev/conversations/{id}`)
 2. Note the `conversation_id` for tracking
 3. **EXIT** - do not wait for the conversation to finish
