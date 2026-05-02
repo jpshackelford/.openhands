@@ -2,6 +2,8 @@
 
 Main orchestration logic for the conversation-search PR workflow. This skill is designed to run as a scheduled automation that wakes up periodically to assess state and dispatch work.
 
+The project consists of **multiple work items**, each becoming a PR. The orchestrator works through them sequentially until the project is complete.
+
 ## Usage
 
 ```
@@ -9,11 +11,12 @@ Main orchestration logic for the conversation-search PR workflow. This skill is 
 ```
 
 This skill runs automatically via cron automation. It:
-1. Assesses current state of the repository and any open PRs
-2. Decides what action is needed
-3. Spawns worker conversations as appropriate
-4. Logs what was done
-5. Exits (next check happens on next cron trigger)
+1. Discovers any open PRs for the repo (there should be 0 or 1 at a time)
+2. Reads the design doc to find pending work items
+3. Decides what action is needed based on current state
+4. Spawns a worker conversation if work is available
+5. Logs what was done
+6. Exits (next check happens on next cron trigger)
 
 ## Workflow Overview
 
@@ -32,19 +35,19 @@ This skill runs automatically via cron automation. It:
 
 ## Gather State
 
-Use `lxa` for quick visibility, `gh` for details:
+Use `gh` to discover open PRs, `lxa` for quick status, design doc for work items:
 
 ```bash
-# Quick PR status - shows history, CI, state, unresolved threads
-lxa pr list "OpenHands/conversation-search#1"
-# Output: oCR green ready 2
+# 1. Discover open PRs (usually 0 or 1)
+gh pr list --repo OpenHands/conversation-search --state open --json number,title
+# Output: [{"number": 3, "title": "Add semantic search"}]  # or []
 
+# 2. If a PR exists, get quick status with lxa
+lxa pr list "OpenHands/conversation-search#3"
+# Output: oCR green ready 2
 # History codes: o=opened, C=changes requested, F=fixes pushed, A=approved, m=merged
 
-# List all open PRs
-gh pr list --repo OpenHands/conversation-search --state open
-
-# Read the design doc for pending work items
+# 3. Read the design doc for pending work items
 cat AGENTS.md
 ```
 
@@ -82,10 +85,10 @@ ohtv list --repo conversation-search --since 4h --idle 15
 Example output:
 ```
 ID      Source  Started          Idle   Events  Title
-abc123  cloud   2025-05-02 10:30 3m     42      [Impl] Phase 1
-                                                 Refs: conversation-search#1
-def456  cloud   2025-05-02 09:15 47m    28      [Review] PR #1
-                                                 Refs: conversation-search#1
+abc123  cloud   2025-05-02 10:30 3m     42      [Impl] Add semantic search
+                                                 Refs: conversation-search#3
+def456  cloud   2025-05-02 09:15 47m    28      [Review] PR #2
+                                                 Refs: conversation-search#2
 ```
 
 - **Red idle time** (e.g., `3m`) = conversation is active, don't spawn
@@ -218,9 +221,16 @@ After each action, log what was done:
 
 ```
 [Orchestrator] 2024-01-15T10:30:00Z
-State: PR #1 - oCR green ready 💬2
+State: PR #5 - oCR green ready 💬2
 Action: Spawned review worker (conversation: abc123)
 Reason: 2 unresolved review threads need addressing
+Next check: ~30 minutes (next cron trigger)
+```
+
+```
+[Orchestrator] 2024-01-15T14:00:00Z
+State: No open PRs, 3 work items remaining in AGENTS.md
+Action: Spawned implementation worker for "Add caching layer"
 Next check: ~30 minutes (next cron trigger)
 ```
 

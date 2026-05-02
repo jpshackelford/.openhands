@@ -1,11 +1,24 @@
 # Conversation Search Workflow Plugin
 
-Automated PR workflow for the [conversation-search](https://github.com/OpenHands/conversation-search) project. Orchestrates the full cycle from implementation through review to merge.
+Automated PR workflow for the [conversation-search](https://github.com/OpenHands/conversation-search) project. Orchestrates the full development cycle: **multiple PRs**, each going through implementation → review → merge, until the project is complete.
 
 ## Overview
 
-This plugin provides skills for an automated development workflow:
+The project has a design doc with multiple work items. The orchestrator works through them **one PR at a time**:
 
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                         PROJECT LIFECYCLE                            │
+├─────────────────────────────────────────────────────────────────────┤
+│  Work Item 1 → PR #1 → Review Rounds → Merge ✓                      │
+│  Work Item 2 → PR #2 → Review Rounds → Merge ✓                      │
+│  Work Item 3 → PR #3 → Review Rounds → Merge ✓                      │
+│  ...                                                                 │
+│  Work Item N → PR #N → Review Rounds → Merge ✓ → PROJECT COMPLETE  │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+Each PR follows this cycle:
 ```
 Design Doc → Implementation → CI → Review → Address Feedback → Merge
      ↑                                              │
@@ -19,11 +32,11 @@ The workflow is driven by:
 
 ## lxa for Visibility
 
-Use `lxa` to quickly see what's happening:
+Use `lxa` to quickly see PR status (after discovering the PR number with `gh pr list`):
 
 ```bash
 # Quick PR status with history codes
-lxa pr list "OpenHands/conversation-search#1"
+lxa pr list "OpenHands/conversation-search#<PR_NUMBER>"
 
 # Output: oCR green ready 2
 # Meaning: opened → Changes requested → Review round, CI green, 2 unresolved threads

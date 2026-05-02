@@ -17,8 +17,11 @@ Then provide:
 The `lxa pr list` command provides a compact view of PR status:
 
 ```bash
-# List specific PR(s)
-lxa pr list "OpenHands/conversation-search#1"
+# First, discover open PRs
+gh pr list --repo OpenHands/conversation-search --state open --json number
+
+# List specific PR (use the discovered number)
+lxa pr list "OpenHands/conversation-search#<PR_NUMBER>"
 
 # List all open PRs for a repo (need to add to board first)
 lxa repo add OpenHands/conversation-search
@@ -95,13 +98,16 @@ Based on gathered information:
 ## Example Workflow
 
 ```bash
-# Quick status check
-lxa pr list "OpenHands/conversation-search#1"
+# 1. Discover current open PR
+PR_NUM=$(gh pr list --repo OpenHands/conversation-search --state open --json number -q '.[0].number')
+
+# 2. Quick status check
+lxa pr list "OpenHands/conversation-search#${PR_NUM}"
 
 # Output: oCR green ready 2 - needs attention (2 unresolved threads)
 
-# Get details on what needs addressing
-gh pr view 1 --repo OpenHands/conversation-search --comments
+# 3. Get details on what needs addressing
+gh pr view ${PR_NUM} --repo OpenHands/conversation-search --comments
 
 # Read the review comments, understand what's being asked
 # Determine: is this good taste, acceptable, or needs work?
