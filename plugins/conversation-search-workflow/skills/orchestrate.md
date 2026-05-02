@@ -64,61 +64,34 @@ cat AGENTS.md
 
 ## Avoiding Duplicate Work
 
-Before spawning a worker, check if any related conversations are still active. A conversation is **quiet** when its last event timestamp is older than `QUIET_PERIOD` (e.g., 10-15 minutes).
+Before spawning a worker, check if any related conversations are still active. A conversation is **quiet** when its last event timestamp is older than `QUIET_PERIOD` (e.g., 7-15 minutes).
 
-### API Capabilities
+### Using ohtv (Recommended)
 
-The OpenHands API supports:
-- `updated_at__gte` - filter conversations updated after timestamp ✅
-- `title__contains` - filter by title substring ✅
-- `selected_repository` - returned but **not filterable** (filter client-side)
-- Per-conversation event queries with `sort_order=TIMESTAMP_DESC&limit=1`
-
-### Strategy: Find Recently Active Conversations
+Use `ohtv list` with the `--idle` flag to see active vs quiet conversations at a glance:
 
 ```bash
-# Constants
-LOOKBACK_HOURS=4
-QUIET_MINUTES=15
-REPO_FILTER="conversation-search"
+# Sync recent conversations first
+ohtv sync --since 4h --quiet
 
-# Step 1: Get all conversations updated in last N hours
-SINCE=$(date -u -d "${LOOKBACK_HOURS} hours ago" +%Y-%m-%dT%H:%M:%SZ)
-CONVS=$(curl -s "https://app.all-hands.dev/api/v1/app-conversations/search?updated_at__gte=${SINCE}&limit=50" \
-  -H "Authorization: Bearer $OH_API_KEY")
-
-# Step 2: Filter to our repo (by selected_repository or title)
-MATCHING=$(echo "$CONVS" | jq -r ".items[] | select(.selected_repository == \"OpenHands/${REPO_FILTER}\" or (.title | contains(\"${REPO_FILTER}\"))) | .id")
-
-# Step 3: For each, check last event timestamp
-NOW_EPOCH=$(date +%s)
-ACTIVE_COUNT=0
-
-for CONV_ID in $MATCHING; do
-  LAST_EVENT=$(curl -s "https://app.all-hands.dev/api/v1/conversation/${CONV_ID}/events/search?sort_order=TIMESTAMP_DESC&limit=1" \
-    -H "Authorization: Bearer $OH_API_KEY" | jq -r '.items[0].timestamp // empty')
-  
-  if [ -n "$LAST_EVENT" ]; then
-    LAST_EPOCH=$(date -d "$LAST_EVENT" +%s 2>/dev/null || echo 0)
-    DIFF_MINS=$(( (NOW_EPOCH - LAST_EPOCH) / 60 ))
-    
-    if [ "$DIFF_MINS" -lt "$QUIET_MINUTES" ]; then
-      echo "ACTIVE: ${CONV_ID:0:8} - last event ${DIFF_MINS}m ago"
-      ACTIVE_COUNT=$((ACTIVE_COUNT + 1))
-    else
-      echo "QUIET:  ${CONV_ID:0:8} - last event ${DIFF_MINS}m ago"
-    fi
-  fi
-done
-
-if [ "$ACTIVE_COUNT" -eq 0 ]; then
-  echo "✅ No active conversations - safe to spawn new worker"
-else
-  echo "⏳ ${ACTIVE_COUNT} active conversation(s) - wait before spawning"
-fi
+# Check conversations for this repo with idle time
+# Red = active (< threshold), Green = quiet (>= threshold)
+ohtv list --repo conversation-search --since 4h --idle 15
 ```
 
-### Better: Use ohtv (smarter repo detection)
+Example output:
+```
+ID      Source  Started          Idle   Events  Title
+abc123  cloud   2025-05-02 10:30 3m     42      [Impl] Phase 1
+                                                 Refs: conversation-search#1
+def456  cloud   2025-05-02 09:15 47m    28      [Review] PR #1
+                                                 Refs: conversation-search#1
+```
+
+- **Red idle time** (e.g., `3m`) = conversation is active, don't spawn
+- **Green idle time** (e.g., `47m`) = conversation is quiet, safe to spawn
+
+### Why ohtv over direct API?
 
 `ohtv` uses heuristics to find repos related to a conversation by parsing:
 - `--repo` flags in gh commands
@@ -127,35 +100,26 @@ fi
 - Clone commands
 - Merge success messages
 
-This casts a wider net than just `selected_repository`.
+This finds conversations that worked on a repo even if `selected_repository` wasn't set correctly.
+
+### Additional ohtv commands
 
 ```bash
-# Sync recent conversations (do periodically, not every check)
-ohtv sync --since $(date -u -d '4 hours ago' +%Y-%m-%dT%H:%M:%SZ) --quiet
-
-# Index repo references (required for --repo filter)
-ohtv db scan && ohtv db process refs
-
-# List conversations that touched this repo (writes + reads)
-ohtv list --repo conversation-search --since 4h
-
-# List conversations that WROTE to this repo (pushed, created PR, merged, etc.)
-ohtv list --repo conversation-search --action pushed
-
-# Check specific conversation's last event timestamp
-ohtv show CONV_ID -S  # Shows first_ts and last_ts in stats
-
 # See what repos a conversation touched
 ohtv refs CONV_ID
-```
 
-**Key advantage:** `ohtv` finds conversations that worked on a repo even if `selected_repository` wasn't set or was set to something else.
+# Filter by action type (e.g., only conversations that pushed)
+ohtv list --repo conversation-search --action pushed --idle
+
+# Check specific conversation stats
+ohtv show CONV_ID -S
+```
 
 ### Decision Rule
 
 Only spawn if:
-- No conversation with last event within QUIET_PERIOD (e.g., 15 min)
-- OR all related conversations have a finish action (explicitly done)
+- All conversations show **green** idle time (>= QUIET_PERIOD)
+- OR no conversations found for this repo in the lookback window
 
 ## Spawning Workers
 
