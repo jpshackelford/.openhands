@@ -1,0 +1,262 @@
+---
+name: manual-test
+description: Run manual blackbox tests and post structured results to PR
+triggers:
+  - /manual-test
+  - /test-pr
+---
+
+# Manual Test
+
+Run manual blackbox tests for a PR and post structured test results as a PR comment. This step is **required** before code review begins.
+
+## Usage
+
+```
+/manual-test
+```
+
+Then provide:
+- **pr_number**: The PR number to test (e.g., 42)
+
+## Why Manual Testing?
+
+The ohtv project requires manual testing before code review because:
+1. **CLI tools need real testing** - Unit tests don't catch UX issues
+2. **Reviewers need context** - The test report shows what was verified
+3. **Reproducibility** - Structured reports let humans repeat the tests
+4. **Quality gate** - No PR gets reviewed without documented testing
+
+## Test Workflow
+
+### 1. Set Up Test Environment
+
+```bash
+# Clone the repo if needed
+gh repo clone jpshackelford/ohtv /tmp/ohtv-test 2>/dev/null || true
+cd /tmp/ohtv-test
+
+# Checkout the PR branch
+gh pr checkout {pr_number}
+
+# Install dependencies
+uv sync
+
+# Verify installation
+uv run ohtv --help
+```
+
+### 2. Understand What Changed
+
+Read the PR to understand what needs testing:
+
+```bash
+# View the PR description
+gh pr view {pr_number}
+
+# See what files changed
+gh pr diff {pr_number} --name-only
+
+# Read the diff to understand the changes
+gh pr diff {pr_number}
+```
+
+Identify:
+- New commands or flags to test
+- Changed behavior to verify
+- Edge cases mentioned in the PR description
+
+### 3. Design Test Scenarios
+
+Based on what changed, design test scenarios that:
+- Cover the **happy path** (normal usage)
+- Test **edge cases** (empty input, errors, limits)
+- Verify **output formats** (table, JSON, CSV if applicable)
+- Check **integration** with other commands
+
+### 4. Execute Tests
+
+Run each test scenario and document:
+- **Command executed**
+- **Expected result**
+- **Actual result** (copy real output)
+- **Pass/Fail status**
+
+Example test execution:
+```bash
+# Test 1: Basic invocation
+uv run ohtv list -A --idle
+# Expected: Shows idle column with color coding
+# Result: ✅ PASS - idle column shows, red < 7m, green >= 7m
+
+# Test 2: Custom threshold
+uv run ohtv list -A --idle 10
+# Expected: Threshold changes to 10 minutes
+# Result: ✅ PASS - colors now based on 10m threshold
+```
+
+### 5. Run Unit Tests
+
+Always verify unit tests still pass:
+
+```bash
+uv run python -m pytest tests/ -v --tb=short
+```
+
+Document the result:
+- Number of tests passed
+- Any failures (should be 0)
+
+### 6. Post Test Report to PR
+
+Post a **structured test report** as a PR comment using the template below.
+
+```bash
+gh pr comment {pr_number} --body "$(cat <<'EOF'
+## Manual Test Results for PR #{pr_number}
+
+_This comment was created by an AI agent (OpenHands) on behalf of @jpshackelford._
+
+### Test Setup
+
+- Branch: `{branch_name}`
+- Python: {python_version}
+- Platform: {platform}
+- ohtv installed via: `uv sync`
+
+### Test Summary
+
+| Test | Command | Status | Notes |
+|------|---------|--------|-------|
+| 1 | `ohtv {command}` | ✅ PASS | {notes} |
+| 2 | `ohtv {command}` | ✅ PASS | {notes} |
+| 3 | `ohtv {command}` | ❌ FAIL | {what went wrong} |
+
+### Detailed Results
+
+#### Test 1: {Test Name}
+
+**Command:**
+```bash
+uv run ohtv {command}
+```
+
+**Expected:** {what should happen}
+
+**Actual output:**
+```
+{paste actual output here}
+```
+
+**Result:** ✅ PASS
+
+---
+
+#### Test 2: {Test Name}
+
+... (repeat for each test)
+
+---
+
+### Unit Tests
+
+```
+uv run python -m pytest tests/ -v --tb=short
+```
+
+**Result:** {N} tests passed ✅
+
+---
+
+**Summary:** All tests pass / {N} tests pass, {M} fail
+
+EOF
+)"
+```
+
+## Test Report Template
+
+The test report MUST include these sections:
+
+1. **Header** - "Manual Test Results for PR #N"
+2. **Attribution** - Note this was created by AI on behalf of user
+3. **Test Setup** - Environment details
+4. **Test Summary Table** - Quick overview with Pass/Fail
+5. **Detailed Results** - Each test with command, expected, actual, result
+6. **Unit Tests** - pytest output summary
+7. **Overall Summary** - Final verdict
+
+## Example: Good Test Report
+
+Here's an example from a real ohtv PR:
+
+```markdown
+## Manual Test Results for PR #40
+
+_This comment was created by an AI agent (OpenHands) on behalf of @jpshackelford._
+
+### Test Setup
+
+Created 3 test conversations with varying idle times and refs:
+- **Conversation 1**: 2 min idle (active - should show **red**)
+- **Conversation 2**: 15 min idle (quiet - should show **green**)
+- **Conversation 3**: 45 min idle with PR/issue refs (gym #3012, gym #50)
+
+### Test Results ✅
+
+| Test | Command | Status | Notes |
+|------|---------|--------|-------|
+| 1 | `ohtv list -A` | ✅ PASS | Default list with refs showing |
+| 2 | `ohtv list -A --idle` | ✅ PASS | Idle column replaces Duration |
+| 3 | `ohtv list -A --idle 10` | ✅ PASS | Custom 10m threshold works |
+| 4 | `ohtv list -A --no-refs` | ✅ PASS | Refs hidden when flag used |
+
+### Color Verification
+
+Verified ANSI color codes are correct:
+- `[31m` (red) for idle < threshold
+- `[32m` (green) for idle >= threshold
+
+### Unit Tests
+
+All **835 unit tests pass** ✅
+
+---
+
+**Summary**: All functionality works as documented in the PR description.
+```
+
+## What Makes a Good Test Report
+
+✅ **DO:**
+- Test real functionality, not just "it runs"
+- Include actual command output (not paraphrased)
+- Document edge cases tested
+- Note any bugs found during testing
+- Include environment details for reproducibility
+- Run and report unit test results
+
+❌ **DON'T:**
+- Skip error case testing
+- Fabricate output that wasn't actually run
+- Post vague "it works" statements
+- Forget to test all new flags/options
+- Skip unit tests
+
+## After Posting
+
+Once the test report is posted:
+1. Verify the comment appears on the PR
+2. Log success and exit
+3. The orchestrator will advance to code review phase
+
+## Error Handling
+
+If testing reveals bugs:
+1. Document the failure in the test report
+2. Post the report anyway (with failures noted)
+3. Exit - implementation worker will be spawned to fix
+
+If environment setup fails:
+1. Report the specific error
+2. Exit - don't post incomplete test reports
