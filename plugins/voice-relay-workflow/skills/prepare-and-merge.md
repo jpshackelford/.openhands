@@ -134,12 +134,12 @@ After merge, update the project documentation:
 git checkout main
 git pull
 
-# Update AGENTS.md
+# Update docs/DESIGN.md
 # - Mark the work item as complete
 # - Note the PR number
 # - Identify next work item
 
-git add AGENTS.md
+git add docs/DESIGN.md
 git commit -m "docs: mark {item} complete after PR #{number}"
 git push
 ```

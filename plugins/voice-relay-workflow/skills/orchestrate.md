@@ -121,7 +121,7 @@ lxa pr list "jpshackelford/voice-relay#3"
 # History codes: o=opened, C=changes requested, F=fixes pushed, A=approved, m=merged
 
 # 3. Read the design doc for pending work items
-cat AGENTS.md
+cat docs/DESIGN.md
 ```
 
 ## Decision Tree
@@ -209,14 +209,14 @@ Title: [Implementation] {Work Item Title}
 Prompt: |
   You are implementing a work item for the voice-relay project.
   
-  1. Read AGENTS.md to understand the project and find the next pending item
+  1. Read docs/DESIGN.md to understand the project and find the next pending item
   2. Create a feature branch from main (ensure main is up-to-date)
   3. Implement the feature with tests (target >80% coverage for new code)
   4. Run lints and type checks, fix any issues
   5. Commit with clear messages, push, create a DRAFT PR
   6. Monitor CI, fix any failures until green
   7. Once CI is green, REFLECT:
-     - Update AGENTS.md: mark item as in-progress, note any learnings
+     - Update docs/DESIGN.md: mark item as in-progress, note any learnings
      - Clarify next steps based on what you learned
      - Commit these plan updates
   8. Move PR from draft to ready (triggers review bot)
@@ -249,7 +249,7 @@ Prompt: |
      - Mark thread as resolved using GitHub GraphQL API
   8. After all feedback addressed, REFLECT:
      - Did you learn anything that impacts the overall plan?
-     - If so, update AGENTS.md and commit
+     - If so, update docs/DESIGN.md and commit
   9. Move PR back to ready: gh pr ready {number}
   10. Exit - next review round is a separate conversation
 
@@ -277,7 +277,7 @@ Prompt: |
      - Clear summary line
      - Body with relevant details
   6. Squash and merge: gh pr merge {number} --squash --body "commit message"
-  7. Update AGENTS.md:
+  7. Update docs/DESIGN.md:
      - Mark this work item as complete with PR reference
      - Identify the next work item to tackle
      - Note any learnings for future work

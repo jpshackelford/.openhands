@@ -142,7 +142,7 @@ Once verified the conversation started and Slack notification sent:
 Repository: jpshackelford/voice-relay
 Title: [Impl] Add semantic search
 Prompt: |
-  Read the design doc in AGENTS.md. Implement the next pending item.
+  Read the design doc in docs/DESIGN.md. Implement the next pending item.
   Follow the PR workflow: branch, implement with tests (>80% coverage), 
   lint, commit, push, create draft PR, monitor CI until green,
   then reflect and update the plan before moving PR to ready.

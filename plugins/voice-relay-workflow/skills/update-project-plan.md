@@ -51,7 +51,7 @@ When a PR is merged:
 
 ### 1. Read the Current Plan
 
-The plan typically lives in `AGENTS.md` or a design doc. Read it to understand:
+The plan typically lives in `docs/DESIGN.md` or a design doc. Read it to understand:
 - What's the overall structure?
 - What items are marked complete?
 - What's the current item being worked on?
@@ -75,7 +75,7 @@ Make updates that are:
 ### 4. Commit the Changes
 
 ```bash
-git add AGENTS.md  # or the relevant doc
+git add docs/DESIGN.md  # or the relevant doc
 git commit -m "docs: update plan after implementing {feature}
 
 - Mark {item} as complete
