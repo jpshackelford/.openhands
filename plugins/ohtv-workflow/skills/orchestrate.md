@@ -112,17 +112,31 @@ gh pr view 42 --repo jpshackelford/ohtv --comments | grep -i "Manual Test Result
 
 ## Decision Tree
 
-The ohtv workflow has a **mandatory manual testing step** before review.
+The ohtv workflow has a **mandatory manual testing step**. Testing must happen:
+1. Before initial code review
+2. **Again** after significant changes from review feedback (re-testing)
 
-| Current State | Action |
-|---------------|--------|
-| PR exists, draft, CI failing | Wait (worker may still be active) |
-| PR exists, draft, CI green | Wait (implementation finishing up) |
-| PR exists, ready, CI green, **no manual test results** | Spawn **testing worker** |
-| PR exists, ready, CI green, test results posted, no reviews | Wait (review bot running) |
-| PR exists, ready, CI green, test results posted, 💬 > 0 | Spawn **review worker** |
-| PR exists, ready, test results posted, good/acceptable rating | Spawn **merge worker** |
-| PR merged | Log completion, move to next PR |
+### Priority Order (evaluate top to bottom)
+
+| Priority | Current State | Action |
+|----------|---------------|--------|
+| 1 | PR exists, CI failing | Wait or spawn **fix worker** (CI must be green first) |
+| 2 | PR exists, draft | Wait (implementation in progress) |
+| 3 | PR ready, CI green, **no manual test results** | Spawn **testing worker** |
+| 4 | PR ready, CI green, **test results outdated** | Spawn **re-testing worker** |
+| 5 | PR ready, CI green, test results valid, 💬 > 0 | Spawn **review worker** |
+| 6 | PR ready, test results valid, good/acceptable rating | Spawn **merge worker** |
+| 7 | PR merged | Log completion, move to next PR |
+
+### Key Principle: Testing Gates Everything
+
+**Even if a PR is already in review (has comments, review threads), testing is still required.**
+
+If you find a PR with:
+- Review comments (💬 > 0) but NO manual test results → Spawn **testing worker** first
+- Review comments AND test results that are outdated → Spawn **re-testing worker**
+
+The testing step is NOT skipped just because review started. CI must be green to test.
 
 ### Detecting Manual Test Results
 
@@ -131,7 +145,7 @@ A PR has been manually tested if there's a comment containing:
 - Posted by `openhands-ai` or contains "AI agent (OpenHands)"
 
 ```bash
-# Check for manual test comment
+# Check for manual test comment with timestamp
 gh api graphql -f query='
   query($owner: String!, $repo: String!, $number: Int!) {
     repository(owner: $owner, name: $repo) {
@@ -140,6 +154,7 @@ gh api graphql -f query='
           nodes {
             body
             author { login }
+            createdAt
           }
         }
       }
@@ -148,6 +163,45 @@ gh api graphql -f query='
 ' -f owner=jpshackelford -f repo=ohtv -f number=42 | \
   jq '.data.repository.pullRequest.comments.nodes[] | select(.body | test("Manual Test Results"; "i"))'
 ```
+
+### Detecting Outdated Test Results (Re-testing Required)
+
+Test results are **outdated** and re-testing is required when:
+
+1. **Significant commits after last test** - New commits pushed after the test comment timestamp
+2. **Review requested substantial changes** - Review feedback that changes behavior (not just style/docs)
+
+```bash
+# Get timestamp of last manual test comment
+TEST_TIMESTAMP=$(gh api graphql -f query='...' | jq -r '... | .createdAt' | tail -1)
+
+# Get timestamp of last commit on PR branch
+LAST_COMMIT=$(gh pr view 42 --json commits --jq '.commits[-1].committedDate')
+
+# If last commit is AFTER last test, re-testing may be needed
+if [[ "$LAST_COMMIT" > "$TEST_TIMESTAMP" ]]; then
+  # Check if changes are significant (not just docs/style)
+  CHANGED_FILES=$(gh pr diff 42 --name-only)
+  # If .py files changed (not just tests), re-test is needed
+  if echo "$CHANGED_FILES" | grep -E '\.py$' | grep -v '_test\.py$' | grep -v 'test_'; then
+    echo "Re-testing required: code changes after last test"
+  fi
+fi
+```
+
+### Heuristics for "Significant Changes"
+
+Re-test if ANY of these are true after the last test:
+- Source files changed (`.py` excluding `*_test.py`, `test_*.py`)
+- CLI argument handling changed
+- Database/storage logic changed
+- More than 50 lines of non-test code changed
+
+Do NOT re-test if only:
+- Test files changed
+- Documentation/README changed
+- Comments or docstrings changed
+- Type hints added (no runtime effect)
 
 ## Avoiding Duplicate Work
 
@@ -166,7 +220,9 @@ ohtv list --repo ohtv --since 4h --idle 15
 
 ## Worker Prompts
 
-### Testing Worker
+### Testing Worker (Initial)
+
+Use when: PR has NO manual test results yet (even if review has already started).
 
 ```
 Repository: jpshackelford/ohtv
@@ -174,7 +230,7 @@ Title: [Manual Test] PR #{number} - {title}
 Prompt: |
   You are running manual tests for PR #{number}.
   
-  This is a REQUIRED step before code review. Your job is to:
+  This is a REQUIRED step before code review can proceed. Your job is to:
   1. Clone the repo and checkout the PR branch
   2. Install with `uv sync`
   3. Read the PR to understand what changed
@@ -182,9 +238,45 @@ Prompt: |
   5. Run the unit test suite
   6. Post a structured test report as a PR comment
   
+  **NOTE:** Even if this PR already has review comments, testing is still
+  required. Testing gates the review process - reviewers need to see what
+  was tested before approving.
+  
   Follow the /manual-test skill for the expected test report format.
   
   After posting the test report, EXIT. Do not continue to review.
+
+Plugins: github:jpshackelford/.openhands/plugins/ohtv-workflow@feat/ohtv-workflow-plugin
+PR Number: {number}
+```
+
+### Re-Testing Worker (After Significant Changes)
+
+Use when: PR has test results, but significant code changes were made AFTER the last test.
+
+```
+Repository: jpshackelford/ohtv
+Title: [Re-Test] PR #{number} - {title}
+Prompt: |
+  You are RE-TESTING PR #{number} after significant changes from code review.
+  
+  Previous test results exist, but code has changed since then. Your job is to:
+  1. Clone the repo and checkout the PR branch
+  2. Install with `uv sync`
+  3. Read the PR diff to understand what changed SINCE the last test
+  4. Focus testing on the areas that changed
+  5. Re-run any tests that could be affected by the changes
+  6. Run the full unit test suite
+  7. Post a NEW test report as a PR comment (do not edit the old one)
+  
+  Your test report should note:
+  - "Re-test after review round N"
+  - What specifically was re-tested
+  - Whether previously passing tests still pass
+  
+  Follow the /manual-test skill for the expected test report format.
+  
+  After posting the re-test report, EXIT.
 
 Plugins: github:jpshackelford/.openhands/plugins/ohtv-workflow@feat/ohtv-workflow-plugin
 PR Number: {number}

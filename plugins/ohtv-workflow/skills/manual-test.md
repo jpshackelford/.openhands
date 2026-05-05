@@ -8,7 +8,7 @@ triggers:
 
 # Manual Test
 
-Run manual blackbox tests for a PR and post structured test results as a PR comment. This step is **required** before code review begins.
+Run manual blackbox tests for a PR and post structured test results as a PR comment. This step is **required** before code review begins, and may need to be **repeated** after significant changes from review feedback.
 
 ## Usage
 
@@ -18,6 +18,7 @@ Run manual blackbox tests for a PR and post structured test results as a PR comm
 
 Then provide:
 - **pr_number**: The PR number to test (e.g., 42)
+- **is_retest** (optional): Whether this is a re-test after review changes
 
 ## Why Manual Testing?
 
@@ -26,6 +27,24 @@ The ohtv project requires manual testing before code review because:
 2. **Reviewers need context** - The test report shows what was verified
 3. **Reproducibility** - Structured reports let humans repeat the tests
 4. **Quality gate** - No PR gets reviewed without documented testing
+
+## When Testing is Required
+
+### Initial Testing
+- PR is ready for review but has no manual test results
+- Even if review has already started (comments exist), testing must happen first
+- CI must be green before testing
+
+### Re-Testing (After Review Changes)
+Testing must be repeated when:
+- Significant code changes were made after the last test
+- Review feedback caused behavioral changes (not just style/docs)
+- More than 50 lines of non-test code changed since last test
+
+Re-testing is NOT required when only:
+- Test files changed
+- Documentation/comments changed
+- Type hints added
 
 ## Test Workflow
 
@@ -243,12 +262,65 @@ All **835 unit tests pass** ✅
 - Forget to test all new flags/options
 - Skip unit tests
 
+## Re-Test Report Format
+
+When re-testing after review changes, use this modified format:
+
+```markdown
+## Re-Test Results for PR #42 (Round 2)
+
+_This comment was created by an AI agent (OpenHands) on behalf of @jpshackelford._
+
+### Context
+
+Re-testing after review round 2. Changes since last test:
+- Fixed timezone handling in idle calculation
+- Added defensive check for naive datetimes
+
+### What Was Re-Tested
+
+| Area | Previous Status | Current Status | Notes |
+|------|-----------------|----------------|-------|
+| Idle calculation | ✅ PASS | ✅ PASS | Still works |
+| Timezone edge case | ⚠️ Not tested | ✅ PASS | New test added |
+| Color thresholds | ✅ PASS | ✅ PASS | No regression |
+
+### New/Changed Tests
+
+#### Test: Naive datetime handling
+**Command:** `uv run ohtv list -A --idle`
+
+**Purpose:** Verify no crash when conversation has naive datetime
+
+**Result:** ✅ PASS - gracefully handles naive timestamps
+
+### Regression Check
+
+All 12 tests from initial test run still pass ✅
+
+### Unit Tests
+
+All **837 unit tests pass** ✅ (2 new tests added)
+
+---
+
+**Summary:** All changes verified. No regressions detected.
+```
+
+### Key Differences from Initial Test Report
+
+1. **Header indicates round** - "Re-Test Results (Round N)"
+2. **Context section** - What changed since last test
+3. **Comparison table** - Previous vs current status
+4. **Regression check** - Explicitly note previous tests still pass
+5. **Focus on changes** - Don't repeat all original tests, focus on what changed
+
 ## After Posting
 
 Once the test report is posted:
 1. Verify the comment appears on the PR
 2. Log success and exit
-3. The orchestrator will advance to code review phase
+3. The orchestrator will advance to code review phase (or merge if approved)
 
 ## Error Handling
 
