@@ -112,9 +112,7 @@ gh pr view 42 --repo jpshackelford/ohtv --comments | grep -i "Manual Test Result
 
 ## Decision Tree
 
-The ohtv workflow has a **mandatory manual testing step**. Testing must happen:
-1. Before initial code review
-2. **Again** after significant changes from review feedback (re-testing)
+The ohtv workflow ensures **documentation is updated before testing** (so we test what's documented), and both docs and tests are spot-checked before merge if significant changes occurred.
 
 ### Priority Order (evaluate top to bottom)
 
@@ -122,21 +120,68 @@ The ohtv workflow has a **mandatory manual testing step**. Testing must happen:
 |----------|---------------|--------|
 | 1 | PR exists, CI failing | Wait or spawn **fix worker** (CI must be green first) |
 | 2 | PR exists, draft | Wait (implementation in progress) |
-| 3 | PR ready, CI green, **no manual test results** | Spawn **testing worker** |
-| 4 | PR ready, CI green, **test results outdated** | Spawn **re-testing worker** |
-| 5 | PR ready, CI green, test results valid, 💬 > 0 | Spawn **review worker** |
-| 6 | PR ready, test results valid, good/acceptable rating | Spawn **merge worker** |
-| 7 | PR merged | Log completion, move to next PR |
+| 3 | PR ready, CI green, **README not updated** | Spawn **docs worker** |
+| 4 | PR ready, CI green, docs updated, **no manual test results** | Spawn **testing worker** |
+| 5 | PR ready, CI green, **test results outdated** | Spawn **re-testing worker** |
+| 6 | PR ready, CI green, test results valid, 💬 > 0 | Spawn **review worker** |
+| 7 | PR ready, test results valid, good/acceptable rating, **docs outdated** | Spawn **docs spot-check worker** |
+| 8 | PR ready, test results valid, good/acceptable rating, docs valid | Spawn **merge worker** |
+| 9 | PR merged | Log completion, move to next PR |
 
-### Key Principle: Testing Gates Everything
+### Workflow Sequence
 
-**Even if a PR is already in review (has comments, review threads), testing is still required.**
+```
+Implementation → CI Green → DOCS UPDATE → Manual Testing → Review → [Re-test?] → [Docs spot-check?] → Merge
+                               ↑                                        ↑              ↑
+                         (before testing)                    (if significant    (if significant
+                                                              code changes)      doc-impacting changes)
+```
+
+### Key Principle: Test What's Documented
+
+**Documentation must be updated BEFORE testing.** This ensures:
+- Testers verify documented behavior matches actual behavior
+- README examples are tested as part of manual testing
+- Users get accurate docs when the PR merges
 
 If you find a PR with:
-- Review comments (💬 > 0) but NO manual test results → Spawn **testing worker** first
+- No docs update comment AND changes affect CLI/API → Spawn **docs worker** first
+- Docs updated but no test results → Spawn **testing worker**
+- Review comments (💬 > 0) but NO manual test results → Spawn **testing worker** (docs first if missing)
 - Review comments AND test results that are outdated → Spawn **re-testing worker**
+- Approved but significant review changes affected docs → Spawn **docs spot-check worker**
 
 The testing step is NOT skipped just because review started. CI must be green to test.
+
+### Detecting Documentation Updates
+
+A PR has documentation updates if:
+- README.md was modified in the PR diff, OR
+- A PR comment contains "Documentation updated" or "README updated"
+
+```bash
+# Check if README.md is in the changed files
+gh pr diff 42 --name-only | grep -i "readme"
+
+# Check for docs update comment
+gh pr view 42 --repo jpshackelford/ohtv --comments | grep -iE "(README|documentation|docs).*(updated|verified|checked)"
+```
+
+### When Docs Update is Required
+
+Update README.md if the PR introduces ANY of:
+- New CLI commands or subcommands
+- New flags or options
+- Changed default behavior
+- New configuration options
+- New environment variables
+- Changed output formats
+
+Do NOT require docs update if only:
+- Internal refactoring (no user-facing changes)
+- Bug fixes that don't change documented behavior
+- Test-only changes
+- Performance improvements
 
 ### Detecting Manual Test Results
 
@@ -220,9 +265,71 @@ ohtv list --repo ohtv --since 4h --idle 15
 
 ## Worker Prompts
 
+### Documentation Worker
+
+Use when: PR has user-facing changes but README.md hasn't been updated yet.
+
+```
+Repository: jpshackelford/ohtv
+Title: [Docs] PR #{number} - {title}
+Prompt: |
+  You are updating documentation for PR #{number}.
+  
+  This must happen BEFORE manual testing so testers verify documented behavior.
+  
+  1. Clone the repo and checkout the PR branch
+  2. Read the PR diff to understand what changed
+  3. Identify user-facing changes:
+     - New commands or subcommands
+     - New flags or options  
+     - Changed default behavior
+     - New environment variables
+  4. Update README.md to document these changes:
+     - Add new sections if needed
+     - Update examples to show new flags/options
+     - Ensure examples are copy-pasteable and accurate
+  5. Commit with message: "docs: update README for {feature}"
+  6. Push and verify CI passes
+  7. Post a PR comment: "Documentation updated for: {list of changes}"
+  8. Exit - testing worker will verify the docs
+
+Plugins: github:jpshackelford/.openhands/plugins/ohtv-workflow@feat/ohtv-workflow-plugin
+PR Number: {number}
+```
+
+### Docs Spot-Check Worker (Before Merge)
+
+Use when: PR is approved but significant review changes may have affected documented behavior.
+
+```
+Repository: jpshackelford/ohtv
+Title: [Docs Check] PR #{number} - {title}
+Prompt: |
+  You are spot-checking documentation for PR #{number} before merge.
+  
+  Significant code changes occurred during review. Verify README is still accurate.
+  
+  1. Clone the repo and checkout the PR branch
+  2. Compare current code against README.md:
+     - Do documented examples still work?
+     - Are all new flags/options documented?
+     - Are default values correct?
+  3. If discrepancies found:
+     - Update README.md
+     - Commit: "docs: update README after review changes"
+     - Push
+  4. Post a PR comment:
+     - If changes made: "Docs spot-check: Updated {list}"
+     - If no changes needed: "Docs spot-check: README is accurate ✓"
+  5. Exit
+
+Plugins: github:jpshackelford/.openhands/plugins/ohtv-workflow@feat/ohtv-workflow-plugin
+PR Number: {number}
+```
+
 ### Testing Worker (Initial)
 
-Use when: PR has NO manual test results yet (even if review has already started).
+Use when: PR has docs updated but NO manual test results yet (even if review has already started).
 
 ```
 Repository: jpshackelford/ohtv

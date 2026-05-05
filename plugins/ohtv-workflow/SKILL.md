@@ -10,13 +10,17 @@ Unlike design-document-driven projects, ohtv uses **GitHub issues and PRs exclus
 ┌─────────────────────────────────────────────────────────────────────┐
 │                         PR LIFECYCLE                                 │
 ├─────────────────────────────────────────────────────────────────────┤
-│  Implementation → CI Green → MANUAL TESTING → Review → Merge        │
-│                                    ↑                                 │
-│                              (REQUIRED STEP)                         │
+│  Implementation → CI Green → DOCS → TESTING → Review → Merge        │
+│                                 ↑        ↑                           │
+│                           (update    (test what's                    │
+│                            first)     documented)                    │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-**Key difference from other projects:** Before code review begins, a manual testing step is **required**. The tester exercises the new functionality and posts a detailed test report as a PR comment. This enables human reviewers to understand what was tested and repeat the tests.
+**Key differences from other projects:**
+1. **Documentation first**: README.md is updated BEFORE testing, so testers verify documented behavior
+2. **Manual testing required**: Every PR must have documented test results before code review
+3. **Spot-checks before merge**: If significant changes occurred during review, both docs and tests are re-verified
 
 ## lxa for Visibility
 
@@ -50,26 +54,41 @@ Work originates from GitHub issues or existing PRs:
 - Creates/updates PR, monitors CI until green
 - Moves PR to ready for next phase
 
-### Phase 2: Manual Testing (REQUIRED)
-**This step is mandatory before code review.**
+### Phase 2: Documentation Update
+**Documentation is updated BEFORE testing.**
+
+A docs worker:
+- Reviews the PR diff for user-facing changes
+- Updates README.md with new commands, flags, options
+- Ensures examples are accurate and copy-pasteable
+- Posts a comment confirming docs are updated
+
+### Phase 3: Manual Testing (REQUIRED)
+**Testers verify the documented behavior works.**
 
 A testing worker:
 - Installs the PR branch code locally (`uv sync`)
+- Syncs conversation history as needed (`ohtv sync -n 20/50/200`)
+- **Tests README examples** to verify documentation accuracy
 - Exercises the new functionality through blackbox testing
 - Documents test setup, scenarios, expected/actual results
 - Posts a detailed **Manual Test Results** comment to the PR
-- The comment enables human reviewers to repeat the tests
 
 See [Manual Test Skill](skills/manual-test.md) for the expected format.
 
-### Phase 3: Code Review
+### Phase 4: Code Review
 After manual testing is documented:
 - Review bot runs automatically
 - Worker addresses review feedback
 - Resolves threads with explanations
 - Returns PR to ready for next review round
 
-### Phase 4: Merge
+### Phase 5: Spot-Checks (If Significant Changes)
+Before merge, if review caused significant changes:
+- **Re-testing**: Verify code changes didn't break functionality
+- **Docs spot-check**: Verify README still matches actual behavior
+
+### Phase 6: Merge
 When merge criteria met:
 - Studies the full diff holistically
 - Updates PR description to reflect final state

@@ -65,6 +65,29 @@ uv sync
 uv run ohtv --help
 ```
 
+### 1b. Sync Conversation History (If Needed)
+
+Many ohtv commands require conversation data. Sync history before testing:
+
+```bash
+# Light sync - recent conversations only (fast, good for most tests)
+uv run ohtv sync -n 20
+
+# Medium sync - more history for commands that analyze patterns
+uv run ohtv sync -n 50
+
+# Full sync - extensive history for aggregate analysis or search tests
+uv run ohtv sync -n 200
+
+# Time-based sync - last N hours
+uv run ohtv sync --since $(date -u -d '4 hours ago' +%Y-%m-%dT%H:%M:%S)
+```
+
+**Choose sync depth based on what you're testing:**
+- `list`, `show`, `refs` commands → `-n 20` is usually enough
+- `search`, `ask` (RAG) commands → `-n 50` or more for meaningful results
+- Aggregate analysis, statistics → `-n 200` or time-based for representative data
+
 ### 2. Understand What Changed
 
 Read the PR to understand what needs testing:
@@ -92,6 +115,21 @@ Based on what changed, design test scenarios that:
 - Test **edge cases** (empty input, errors, limits)
 - Verify **output formats** (table, JSON, CSV if applicable)
 - Check **integration** with other commands
+- **Test README examples** - Copy examples from README.md and verify they work
+
+### 3b. Verify Documentation Accuracy
+
+Since docs are updated BEFORE testing, verify the README is accurate:
+
+```bash
+# Find examples in README for the new feature
+grep -A5 "ohtv {new_command}" README.md
+
+# Run each example exactly as documented
+# If an example fails or output differs significantly, note it in the test report
+```
+
+**Important:** If README examples don't work or are misleading, this is a test failure. Document it and the docs worker will fix it.
 
 ### 4. Execute Tests
 
