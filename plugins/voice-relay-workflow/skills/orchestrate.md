@@ -197,6 +197,22 @@ Only spawn if:
 - All conversations show **green** idle time (>= QUIET_PERIOD)
 - OR no conversations found for this repo in the lookback window
 
+## Production Deployment Context
+
+**CRITICAL:** The application auto-deploys to **vr.chorecraft.net** on every merge to main.
+
+- **Current production database:** SQLite (`sqlite.db`)
+- **Target:** SQLite (dev) / MariaDB (prod) - but SQLite is live NOW
+- **Migrations are essential:** Every schema change must include migrations that work on the existing SQLite database
+- **No breaking changes:** Production must continue working after each merge
+
+**Migration Guidelines:**
+1. Use a migration tool (e.g., `knex`, `drizzle-orm`, or raw SQL migration files)
+2. Always provide both `up` and `down` migrations
+3. Test migrations against a copy of production data before merging
+4. Additive changes are safe (new tables, new columns with defaults)
+5. Destructive changes require careful planning (column renames, type changes, deletions)
+
 ## Spawning Workers
 
 Use `/spawn-conversation` skill to start worker conversations.
@@ -209,18 +225,27 @@ Title: [Implementation] {Work Item Title}
 Prompt: |
   You are implementing a work item for the voice-relay project.
   
+  **PRODUCTION CONTEXT:**
+  - App auto-deploys to vr.chorecraft.net on merge to main
+  - Production currently uses SQLite (sqlite.db)
+  - All schema changes MUST include migrations
+  - Migrations must be backward-compatible with existing data
+  
   1. Read docs/DESIGN.md to understand the project and find the next pending item
   2. Create a feature branch from main (ensure main is up-to-date)
   3. Implement the feature with tests (target >80% coverage for new code)
-  4. Run lints and type checks, fix any issues
-  5. Commit with clear messages, push, create a DRAFT PR
-  6. Monitor CI, fix any failures until green
-  7. Once CI is green, REFLECT:
+  4. If adding/modifying database schema:
+     - Create migration files (up and down)
+     - Test migrations work on fresh DB and existing data
+  5. Run lints and type checks, fix any issues
+  6. Commit with clear messages, push, create a DRAFT PR
+  7. Monitor CI, fix any failures until green
+  8. Once CI is green, REFLECT:
      - Update docs/DESIGN.md: mark item as in-progress, note any learnings
      - Clarify next steps based on what you learned
      - Commit these plan updates
-  8. Move PR from draft to ready (triggers review bot)
-  9. Exit - review handling is a separate conversation
+  9. Move PR from draft to ready (triggers review bot)
+  10. Exit - review handling is a separate conversation
   
 Plugins: github:jpshackelford/.openhands/plugins/voice-relay-workflow@add-voice-relay-workflow-plugin
 ```
@@ -232,6 +257,11 @@ Repository: jpshackelford/voice-relay
 Title: [Review Round] PR #{number} - {title}
 Prompt: |
   You are addressing review feedback on PR #{number}.
+  
+  **PRODUCTION CONTEXT:**
+  - App auto-deploys to vr.chorecraft.net on merge to main
+  - Production currently uses SQLite (sqlite.db)
+  - Verify any migration changes are backward-compatible
   
   1. Clone the repo and checkout the PR branch
   2. IMMEDIATELY set PR back to draft mode: gh pr ready {number} --undo
@@ -265,24 +295,35 @@ Title: [Merge] PR #{number} - {title}
 Prompt: |
   You are preparing PR #{number} for merge. Merge criteria has been met.
   
+  **PRODUCTION CONTEXT:**
+  - App auto-deploys to vr.chorecraft.net on merge to main
+  - Production currently uses SQLite (sqlite.db)
+  - This merge will immediately affect production
+  - Verify migrations are safe before merging
+  
   1. Clone the repo and checkout the PR branch
   2. Study the full PR diff holistically - understand what was built
-  3. Read all review history to understand how it evolved
-  4. Update PR description to reflect final state:
+  3. **MIGRATION CHECK:** If this PR includes database changes:
+     - Verify migration files exist and are correct
+     - Confirm migrations are additive/safe for existing data
+     - Note any manual steps needed post-deploy
+  4. Read all review history to understand how it evolved
+  5. Update PR description to reflect final state:
      - What was implemented
      - Key decisions made during review
      - Any notable technical details
-  5. Craft a good conventional commit message for squash-merge:
+     - **Migration notes** if applicable
+  6. Craft a good conventional commit message for squash-merge:
      - feat: / fix: / chore: / refactor: as appropriate
      - Clear summary line
      - Body with relevant details
-  6. Squash and merge: gh pr merge {number} --squash --body "commit message"
-  7. Update docs/DESIGN.md:
+  7. Squash and merge: gh pr merge {number} --squash --body "commit message"
+  8. Update docs/DESIGN.md:
      - Mark this work item as complete with PR reference
      - Identify the next work item to tackle
      - Note any learnings for future work
-  8. Push the plan update to main
-  9. Exit
+  9. Push the plan update to main
+  10. Exit
 
 Plugins: github:jpshackelford/.openhands/plugins/voice-relay-workflow@add-voice-relay-workflow-plugin
 PR Number: {number}
