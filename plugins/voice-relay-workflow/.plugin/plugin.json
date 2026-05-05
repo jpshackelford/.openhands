@@ -1,0 +1,7 @@
+{
+  "name": "voice-relay-workflow",
+  "version": "0.1.0",
+  "description": "Automated PR workflow for the voice-relay project. Provides skills for orchestrating implementation, review, and merge cycles.",
+  "author": "jpshackelford",
+  "repository": "https://github.com/jpshackelford/.openhands"
+}
