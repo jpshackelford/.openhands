@@ -9,7 +9,7 @@ triggers:
 
 Main orchestration logic for the voice-relay PR workflow. This skill is designed to run as a scheduled automation that wakes up periodically to assess state and dispatch work.
 
-The project consists of **multiple work items**, each becoming a PR. The orchestrator works through them sequentially until the project is complete.
+The project work items are tracked as **GitHub Issues**. The orchestrator works through open issues sequentially (lowest number first) until all issues are complete.
 
 ## Usage
 
@@ -21,7 +21,7 @@ This skill runs automatically via cron automation. It:
 1. **CHECK FOR HUMAN INSTRUCTIONS FIRST** - Read WORKLOG.md for any `## INSTRUCTION:` entries
 2. If human instructions exist, follow them before doing anything else
 3. Discovers any open PRs for the repo (there should be 0 or 1 at a time)
-4. Reads the design doc to find pending work items
+4. Lists open GitHub issues to find pending work items
 5. Decides what action is needed based on current state
 6. Spawns a worker conversation if work is available
 7. Appends status update to WORKLOG.md on main
@@ -36,7 +36,7 @@ This skill runs automatically via cron automation. It:
 │  1. READ WORKLOG.md for human instructions (FIRST!)             │
 │  2. If human instructions found → follow them, then exit        │
 │  3. Check PR status with lxa pr list (visibility)               │
-│  4. Check design doc for pending work items                      │
+│  4. List open GitHub issues for pending work items               │
 │  5. Decide: Is there work to dispatch?                           │
 │  6. If yes: spawn worker conversation via OH API                 │
 │  7. Append status update to WORKLOG.md (on main!)               │
@@ -108,7 +108,7 @@ Proceed with normal workflow (Step 2 onwards).
 
 ## Gather State
 
-Use `gh` to discover open PRs, `lxa` for quick status, design doc for work items:
+Use `gh` to discover open PRs, `lxa` for quick status, and GitHub issues for work items:
 
 ```bash
 # 1. Discover open PRs (usually 0 or 1)
@@ -120,23 +120,27 @@ lxa pr list "jpshackelford/voice-relay#3"
 # Output: oCR green ready 2
 # History codes: o=opened, C=changes requested, F=fixes pushed, A=approved, m=merged
 
-# 3. Read the design doc for pending work items
-cat docs/DESIGN.md
+# 3. List open GitHub issues for pending work items (sorted by issue number)
+gh issue list --repo jpshackelford/voice-relay --state open --json number,title --jq 'sort_by(.number)'
+# Output: [{"number": 9, "title": "F1: Scope messages to sessions"}, ...]
+
+# 4. Get details of the next issue to work on (lowest number)
+gh issue view 9 --repo jpshackelford/voice-relay --json number,title,body
 ```
 
 ## Decision Tree
 
 | Current State | Action |
 |---------------|--------|
-| No open PRs + pending work items | Spawn **implementation worker** |
+| No open PRs + open issues exist | Spawn **implementation worker** for lowest-numbered issue |
 | PR exists, draft, CI failing | Wait (worker may still be active) |
 | PR exists, draft, CI green | Wait (worker finishing up) |
 | PR exists, ready, no reviews yet | Wait (review bot running) |
 | PR exists, ready, 💬 > 0 | Spawn **review worker** |
 | PR exists, ready, 💬 = 0, good/acceptable taste | Spawn **merge worker** |
 | PR exists, ready, 💬 = 0, 3x acceptable | Spawn **merge worker** |
-| PR merged, more work items | Spawn **implementation worker** for next item |
-| PR merged, no more items | Log completion, exit |
+| PR merged, more open issues | Spawn **implementation worker** for next issue |
+| PR merged, no open issues | Log completion, exit |
 
 ## Avoiding Duplicate Work
 
@@ -221,9 +225,13 @@ Use `/spawn-conversation` skill to start worker conversations.
 
 ```
 Repository: jpshackelford/voice-relay
-Title: [Implementation] {Work Item Title}
+Title: [Implementation] Issue #{issue_number} - {issue_title}
 Prompt: |
-  You are implementing a work item for the voice-relay project.
+  You are implementing GitHub Issue #{issue_number} for the voice-relay project.
+  
+  **ISSUE TO IMPLEMENT:**
+  - Issue: #{issue_number} - {issue_title}
+  - URL: https://github.com/jpshackelford/voice-relay/issues/{issue_number}
   
   **PRODUCTION CONTEXT:**
   - App auto-deploys to vr.chorecraft.net on merge to main
@@ -231,23 +239,25 @@ Prompt: |
   - All schema changes MUST include migrations
   - Migrations must be backward-compatible with existing data
   
-  1. Read docs/DESIGN.md to understand the project and find the next pending item
-  2. Create a feature branch from main (ensure main is up-to-date)
-  3. Implement the feature with tests (target >80% coverage for new code)
-  4. If adding/modifying database schema:
+  1. Read the issue description carefully: gh issue view {issue_number}
+  2. Review acceptance criteria in the issue - these define "done"
+  3. Create a feature branch from main (ensure main is up-to-date)
+  4. Implement the feature with tests (target >80% coverage for new code)
+  5. If adding/modifying database schema:
      - Create migration files (up and down)
      - Test migrations work on fresh DB and existing data
-  5. Run lints and type checks, fix any issues
-  6. Commit with clear messages, push, create a DRAFT PR
-  7. Monitor CI, fix any failures until green
-  8. Once CI is green, REFLECT:
-     - Update docs/DESIGN.md: mark item as in-progress, note any learnings
-     - Clarify next steps based on what you learned
-     - Commit these plan updates
-  9. Move PR from draft to ready (triggers review bot)
-  10. Exit - review handling is a separate conversation
+  6. Run lints and type checks, fix any issues
+  7. Commit with clear messages, push, create a DRAFT PR
+  8. Link PR to issue: Include "Fixes #{issue_number}" in PR description
+  9. Monitor CI, fix any failures until green
+  10. Once CI is green, REFLECT:
+      - Are all acceptance criteria from the issue met?
+      - Note any learnings or follow-up items
+  11. Move PR from draft to ready (triggers review bot)
+  12. Exit - review handling is a separate conversation
   
 Plugins: github:jpshackelford/.openhands/plugins/voice-relay-workflow@add-voice-relay-workflow-plugin
+Issue Number: {issue_number}
 ```
 
 ### Review Worker
@@ -278,8 +288,8 @@ Prompt: |
      - Reply explaining what you did (or why you declined)
      - Mark thread as resolved using GitHub GraphQL API
   8. After all feedback addressed, REFLECT:
-     - Did you learn anything that impacts the overall plan?
-     - If so, update docs/DESIGN.md and commit
+     - Did you learn anything that impacts other issues?
+     - If so, add comments to relevant issues
   9. Move PR back to ready: gh pr ready {number}
   10. Exit - next review round is a separate conversation
 
@@ -318,11 +328,8 @@ Prompt: |
      - Clear summary line
      - Body with relevant details
   7. Squash and merge: gh pr merge {number} --squash --body "commit message"
-  8. Update docs/DESIGN.md:
-     - Mark this work item as complete with PR reference
-     - Identify the next work item to tackle
-     - Note any learnings for future work
-  9. Push the plan update to main
+  8. The linked issue will auto-close if PR description has "Fixes #N"
+  9. Verify issue closed; if not, close manually: gh issue close {issue_number}
   10. Exit
 
 Plugins: github:jpshackelford/.openhands/plugins/voice-relay-workflow@add-voice-relay-workflow-plugin
@@ -346,7 +353,7 @@ Always include:
 
 **Current State:**
 - [PR #5](https://github.com/jpshackelford/voice-relay/pull/5): `oCR green ready 💬2` (2 unresolved threads)
-- Work items remaining: 3 of 5 phases
+- Open issues: #9, #10, #11, #12
 
 **Action Taken:**
 🚀 Spawned review worker to address feedback
@@ -367,8 +374,9 @@ Always include:
 
 🚀 **Launched: Implementation Worker**
 
-Starting work on: "Phase 2: Authentication - GitHub OAuth"
+Starting work on: Issue #9 - F1: Scope messages to sessions
 - No PR yet - will create one
+- Issue URL: https://github.com/jpshackelford/voice-relay/issues/9
 - Conversation: https://app.all-hands.dev/conversations/{conv_id}
 
 ---
@@ -388,18 +396,16 @@ Starting work on: "Phase 2: Authentication - GitHub OAuth"
 ---
 ```
 
-### When Project Completes
+### When All Issues Closed
 
 ```markdown
 ### 2025-05-05 18:00 UTC - Orchestrator
 
-🎉 **Project Complete!**
+🎉 **All Issues Complete!**
 
-All work items have been implemented and merged.
-- Total PRs merged: 5
-- Project duration: X days
-
-See docs/DESIGN.md for the full architecture.
+All tracked issues have been implemented and closed.
+- No open issues remaining
+- Total PRs merged: 4 (Issues #9, #10, #11, #12)
 
 ---
 ```

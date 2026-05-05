@@ -1,29 +1,28 @@
 # Voice Relay Workflow Plugin
 
-Automated PR workflow for the [voice-relay](https://github.com/jpshackelford/voice-relay) project. Orchestrates the full development cycle: **multiple PRs**, each going through implementation → review → merge, until the project is complete.
+Automated PR workflow for the [voice-relay](https://github.com/jpshackelford/voice-relay) project. Orchestrates the full development cycle: **one GitHub Issue at a time**, each going through implementation → review → merge, until all issues are closed.
 
 ## Overview
 
-The project has a design doc (`docs/DESIGN.md`) with a migration path defining work phases. The orchestrator works through them **one PR at a time**:
+Work items are tracked as **GitHub Issues** filed against the repository. The orchestrator works through open issues **one at a time** (lowest issue number first):
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
 │                         PROJECT LIFECYCLE                            │
 ├─────────────────────────────────────────────────────────────────────┤
-│  Phase 1: Database Layer    → PR → Review Rounds → Merge ✓         │
-│  Phase 2: Authentication    → PR → Review Rounds → Merge ✓         │
-│  Phase 3: Workspaces        → PR → Review Rounds → Merge ✓         │
-│  Phase 4: UI Simplification → PR → Review Rounds → Merge ✓         │
-│  Phase 5: Polish            → PR → Review Rounds → Merge ✓         │
-│  → PROJECT COMPLETE                                                  │
+│  Issue #9:  F1: Scope messages to sessions → PR → Review → Merge ✓ │
+│  Issue #10: F2: Workspace Home             → PR → Review → Merge ✓ │
+│  Issue #11: F3: Session View               → PR → Review → Merge ✓ │
+│  Issue #12: F4: Join via QR                → PR → Review → Merge ✓ │
+│  → ALL ISSUES CLOSED                                                 │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-Each PR follows this cycle:
+Each issue follows this cycle:
 ```
-Design Doc → Implementation → CI → Review → Address Feedback → Merge
-     ↑                                              │
-     └──────────── Update Plan with Learnings ──────┘
+GitHub Issue → Implementation → CI → Review → Address Feedback → Merge → Issue Closed
+                    ↑                                  │
+                    └──── Comment learnings on issues ─┘
 ```
 
 The workflow is driven by:
@@ -57,11 +56,12 @@ lxa pr list "jpshackelford/voice-relay#<PR_NUMBER>"
 
 ### Phase 1: Implementation
 A worker conversation:
-- Reads the design doc to find next pending work item
+- Reads the GitHub issue to understand requirements and acceptance criteria
 - Creates feature branch, implements with tests
 - Lints, type checks, commits, pushes
-- Creates draft PR, monitors CI until green
-- **Reflects**: Updates plan with learnings, marks progress
+- Creates draft PR with "Fixes #N" to link to issue
+- Monitors CI until green
+- **Reflects**: Comments learnings on related issues if needed
 - Moves PR to ready (triggers review bot)
 
 ### Phase 2: Review Rounds
@@ -71,7 +71,7 @@ For each review round, a worker conversation:
 - Plans response (accept most suggestions that improve quality)
 - Executes changes commit-by-commit, CI check after each
 - Resolves review threads with explanations
-- **Reflects**: Checks if learnings impact the plan
+- **Reflects**: Checks if learnings impact other issues
 - Moves PR back to ready for next review
 
 ### Phase 3: Merge
@@ -79,8 +79,8 @@ When merge criteria met (good rating, or 3x acceptable, or acceptable+spurious):
 - Studies the full diff holistically
 - Updates PR description to reflect final state
 - Crafts conventional commit message
-- Squash-merges
-- Updates plan: marks complete, identifies next item
+- Squash-merges (issue auto-closes via "Fixes #N")
+- Verifies issue is closed
 
 ## Merge Criteria
 
