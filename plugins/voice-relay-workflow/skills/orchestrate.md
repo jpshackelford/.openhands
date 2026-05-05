@@ -18,13 +18,13 @@ The project consists of **multiple work items**, each becoming a PR. The orchest
 ```
 
 This skill runs automatically via cron automation. It:
-1. **CHECK FOR HUMAN INSTRUCTIONS FIRST** - Read the Slack channel for any messages from humans since the last run
+1. **CHECK FOR HUMAN INSTRUCTIONS FIRST** - Read WORKLOG.md for any `## INSTRUCTION:` entries
 2. If human instructions exist, follow them before doing anything else
 3. Discovers any open PRs for the repo (there should be 0 or 1 at a time)
 4. Reads the design doc to find pending work items
 5. Decides what action is needed based on current state
 6. Spawns a worker conversation if work is available
-7. Posts status update to Slack
+7. Appends status update to WORKLOG.md on main
 8. Exits (next check happens on next cron trigger)
 
 ## Workflow Overview
@@ -33,13 +33,13 @@ This skill runs automatically via cron automation. It:
 ┌──────────────────────────────────────────────────────────────────┐
 │  ORCHESTRATOR WAKE-UP                                            │
 ├──────────────────────────────────────────────────────────────────┤
-│  1. READ SLACK for human instructions (FIRST!)                  │
+│  1. READ WORKLOG.md for human instructions (FIRST!)             │
 │  2. If human instructions found → follow them, then exit        │
 │  3. Check PR status with lxa pr list (visibility)               │
 │  4. Check design doc for pending work items                      │
 │  5. Decide: Is there work to dispatch?                           │
 │  6. If yes: spawn worker conversation via OH API                 │
-│  7. Post status update to Slack                                  │
+│  7. Append status update to WORKLOG.md (on main!)               │
 │  8. Exit                                                         │
 └──────────────────────────────────────────────────────────────────┘
 ```
@@ -64,44 +64,42 @@ ohtv sync --since $(date -u -d '4 hours ago' +%Y-%m-%dT%H:%M:%S) --quiet
 
 **This is the first thing the orchestrator does after setup.**
 
-Read recent messages from `#proj-voice-relay` (ID: `VOICE_RELAY_CHANNEL_ID`) to check if a human has provided instructions since the last orchestrator run (~30 minutes ago).
+Read the `WORKLOG.md` file in the repo root to check for human instructions. Look for entries marked with `## INSTRUCTION:` that haven't been acknowledged yet.
 
-Use `slack_read_channel` with `channel_id: VOICE_RELAY_CHANNEL_ID` and filter for messages from humans (not bots) in the last ~35 minutes.
+```bash
+# Check for unacknowledged instructions
+cat WORKLOG.md | grep -A5 "## INSTRUCTION:" | grep -v "ACKNOWLEDGED"
+```
 
 ### What Counts as Human Instructions
 
-Look for messages from humans (not bot users) that contain actionable instructions:
+Look for `## INSTRUCTION:` entries that contain actionable requests:
 
 **Examples of instructions to follow:**
-- "Pause the workflow until tomorrow"
-- "Skip the current PR and move to the next work item"  
-- "Don't merge PR #5 yet, waiting for @alice to review"
-- "Focus on fixing the test failures first"
-- "Stop working on voice-relay for now"
-- "Resume normal operations"
-- "Prioritize the caching work item next"
-
-**Ignore these (not instructions):**
-- Bot messages (from the orchestrator itself)
-- Reactions/emoji only
-- General discussion not directed at the orchestrator
-- Questions without actionable requests
+- `## INSTRUCTION: Pause the workflow until tomorrow`
+- `## INSTRUCTION: Skip the current PR and move to the next work item`
+- `## INSTRUCTION: Don't merge PR #5 yet, waiting for review`
+- `## INSTRUCTION: Focus on fixing the test failures first`
+- `## INSTRUCTION: Resume normal operations`
 
 ### If Human Instructions Found
 
-1. **Acknowledge** - Reply in the channel confirming you received the instruction
+1. **Acknowledge** - Add `[ACKNOWLEDGED]` to the instruction entry
 2. **Follow** - Execute what was requested
-3. **Report** - Post what you did in response
+3. **Report** - Log what you did in response to WORKLOG.md
 4. **Exit** - Don't proceed with normal workflow this cycle
 
-Example response:
-```
-📋 *Following Human Instructions*
+Example acknowledgment (append to WORKLOG.md):
+```markdown
+### 2025-05-05 10:30 UTC - Orchestrator
 
-Received from @jpshackelford:
+📋 **Following Human Instructions**
+
+Received instruction:
 > "Pause the workflow until the security review is complete"
 
 ✅ Pausing workflow. Will resume when instructed.
+[ACKNOWLEDGED: ## INSTRUCTION: Pause the workflow...]
 ```
 
 ### If No Instructions Found
@@ -290,104 +288,128 @@ Plugins: github:jpshackelford/.openhands/plugins/voice-relay-workflow@add-voice-
 PR Number: {number}
 ```
 
-## Slack Notifications
+## WORKLOG.md Updates
 
-**Channel**: `#proj-voice-relay` (ID: `VOICE_RELAY_CHANNEL_ID`)
+After each orchestrator run, append a status update to `WORKLOG.md` in the repo root. This serves as a persistent log of all workflow activity.
 
-After each orchestrator run, post a brief status update to Slack summarizing what's changed since the last run.
-
-### Status Update Format
-
-Use `slack_send_message` to post updates. Always include links to:
-- The **PR** being worked on: `https://github.com/jpshackelford/voice-relay/pull/{number}`
-- Any **conversation** that was spawned: `https://app.all-hands.dev/conversations/{id}`
-
-```
-🤖 *Orchestrator Check-in*
-
-*Current State:*
-• <https://github.com/jpshackelford/voice-relay/pull/5|PR #5>: `oCR green ready 💬2` (2 unresolved threads)
-• Work items remaining: 3 of 7
-
-*Action Taken:*
-Spawned review worker to address feedback
-→ <https://app.all-hands.dev/conversations/{conv_id}|Watch conversation>
-
-*What Changed:*
-• PR moved from draft → ready
-• CI now passing (was failing)
-• 1 review thread resolved
-
-_Next check in ~30 minutes_
-```
-
-### When Spawning a Conversation
+### Log Entry Format
 
 Always include:
-1. What type of worker was launched (implementation/review/merge)
-2. What it will do
-3. Link to the **PR**: `https://github.com/jpshackelford/voice-relay/pull/{number}`
-4. Link to the **conversation**: `https://app.all-hands.dev/conversations/{conversation_id}`
+- Timestamp (UTC)
+- Current state summary
+- Action taken (if any)
+- Links to PRs and conversations
 
-Example for review worker:
+```markdown
+### 2025-05-05 10:30 UTC - Orchestrator
+
+**Current State:**
+- [PR #5](https://github.com/jpshackelford/voice-relay/pull/5): `oCR green ready 💬2` (2 unresolved threads)
+- Work items remaining: 3 of 5 phases
+
+**Action Taken:**
+🚀 Spawned review worker to address feedback
+- Conversation: https://app.all-hands.dev/conversations/{conv_id}
+
+**What Changed Since Last Run:**
+- PR moved from draft → ready
+- CI now passing (was failing)
+- 1 review thread resolved
+
+---
 ```
-🚀 *Launched: Review Worker*
 
-Addressing feedback on <https://github.com/jpshackelford/voice-relay/pull/5|PR #5: Add semantic search>
+### When Spawning a Worker
 
-📎 <https://app.all-hands.dev/conversations/abc123def456|Watch progress>
-```
+```markdown
+### 2025-05-05 14:00 UTC - Orchestrator
 
-Example for implementation worker:
-```
-🚀 *Launched: Implementation Worker*
+🚀 **Launched: Implementation Worker**
 
-Starting work on: "Add semantic search endpoint"
-(No PR yet - will create one)
+Starting work on: "Phase 2: Authentication - GitHub OAuth"
+- No PR yet - will create one
+- Conversation: https://app.all-hands.dev/conversations/{conv_id}
 
-📎 <https://app.all-hands.dev/conversations/abc123def456|Watch progress>
-```
-
-Example for merge worker:
-```
-🚀 *Launched: Merge Worker*
-
-Preparing to merge <https://github.com/jpshackelford/voice-relay/pull/5|PR #5: Add semantic search>
-
-📎 <https://app.all-hands.dev/conversations/abc123def456|Watch progress>
+---
 ```
 
 ### When No Action Needed
 
-Still post a brief update so we know it ran:
-```
-✅ *Orchestrator Check-in* - All quiet
+```markdown
+### 2025-05-05 14:30 UTC - Orchestrator
 
-• <https://github.com/jpshackelford/voice-relay/pull/5|PR #5> is in review (waiting for reviewer)
-• No active conversations found
-• Nothing to do this cycle
+✅ **All quiet** - No action needed
 
-_Next check in ~30 minutes_
+- [PR #5](https://github.com/jpshackelford/voice-relay/pull/5) is in review (waiting for reviewer)
+- No active conversations found
+- Next check in ~30 minutes
+
+---
 ```
 
 ### When Project Completes
 
-```
-🎉 *Project Complete!*
+```markdown
+### 2025-05-05 18:00 UTC - Orchestrator
+
+🎉 **Project Complete!**
 
 All work items have been implemented and merged.
-• Total PRs merged: 7
-• Project duration: 3 days
+- Total PRs merged: 5
+- Project duration: X days
 
-See AGENTS.md for the full summary.
+See docs/DESIGN.md for the full architecture.
+
+---
 ```
+
+### Committing WORKLOG.md Updates
+
+**IMPORTANT:** WORKLOG.md updates MUST go to `main`, not to any feature branch.
+
+```bash
+# Save current branch (if on one)
+CURRENT_BRANCH=$(git branch --show-current)
+
+# Stash any uncommitted work
+git stash --include-untracked
+
+# Switch to main and pull latest
+git checkout main
+git pull origin main
+
+# Append your update to WORKLOG.md
+cat >> WORKLOG.md << 'EOF'
+### 2025-05-05 10:30 UTC - Orchestrator
+
+... your update here ...
+
+---
+EOF
+
+# Commit and push to main
+git add WORKLOG.md
+git commit -m "chore: worklog update $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+git push origin main
+
+# Return to previous branch if there was one
+if [ -n "$CURRENT_BRANCH" ] && [ "$CURRENT_BRANCH" != "main" ]; then
+  git checkout "$CURRENT_BRANCH"
+  git stash pop 2>/dev/null || true
+fi
+```
+
+This ensures:
+1. WORKLOG.md is always on main (not buried in PR branches)
+2. All orchestrator/worker updates are visible immediately
+3. Human instructions can be added directly to main
 
 ## Logging
 
-After each action, log what was done:
+After each action, also log to stdout for the conversation record:
 
 ```
-[Orchestrator] 2024-01-15T10:30:00Z
+[Orchestrator] 2025-05-05T10:30:00Z
 State: PR #5 - oCR green ready 💬2
 Action: Spawned review worker (conversation: abc123)
 Reason: 2 unresolved review threads need addressing
@@ -395,9 +417,9 @@ Next check: ~30 minutes (next cron trigger)
 ```
 
 ```
-[Orchestrator] 2024-01-15T14:00:00Z
-State: No open PRs, 3 work items remaining in AGENTS.md
-Action: Spawned implementation worker for "Add caching layer"
+[Orchestrator] 2025-05-05T14:00:00Z
+State: No open PRs, 3 work items remaining
+Action: Spawned implementation worker for "Phase 2: Authentication"
 Next check: ~30 minutes (next cron trigger)
 ```
 
