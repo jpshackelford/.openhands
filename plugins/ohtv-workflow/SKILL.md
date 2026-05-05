@@ -43,6 +43,17 @@ lxa pr list "jpshackelford/ohtv#<PR_NUMBER>"
 | [Orchestrate](skills/orchestrate.md) | `/orchestrate` | Main decision loop |
 | [Manual Test](skills/manual-test.md) | `/manual-test` | Run manual blackbox tests and post results |
 | [Prepare and Merge](skills/prepare-and-merge.md) | `/prepare-merge` | Final merge workflow |
+| [Disable Automation](skills/disable-automation.md) | `/disable-automation` | Auto-disable on consecutive quiet periods |
+
+## Auto-Disable Behavior
+
+The orchestrator automatically disables itself when it detects **two consecutive "quiet" entries** in WORKLOG.md (indicating no new work to pick up). This prevents unnecessary automation runs when the project is at a natural pause point.
+
+**Automation ID:** `c202ca20-60d5-4f5b-9d53-3d7308c1d95b`
+
+To re-enable after auto-disable:
+- **UI:** https://app.all-hands.dev/automations → Toggle "OHTV Workflow Orchestrator"
+- **API:** `curl -X PATCH ".../api/automation/v1/c202ca20-60d5-4f5b-9d53-3d7308c1d95b" -d '{"enabled": true}'`
 
 ## Workflow Phases
 

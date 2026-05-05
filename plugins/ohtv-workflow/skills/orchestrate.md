@@ -493,6 +493,93 @@ Testing [PR #42](https://github.com/jpshackelford/ohtv/pull/42): Add --repair op
 ---
 ```
 
+## Auto-Disable on Consecutive Quiet Periods
+
+**CRITICAL:** Before logging a "quiet" entry, check if WORKLOG.md already shows two consecutive quiet entries. If so, disable the automation instead of running indefinitely.
+
+### Automation ID
+
+This orchestrator's automation ID is:
+```
+c202ca20-60d5-4f5b-9d53-3d7308c1d95b
+```
+
+### Detection Logic
+
+Check WORKLOG.md for consecutive quiet entries:
+
+```bash
+# Extract last few orchestrator entries and check for consecutive "All quiet" patterns
+# Look for entries that contain both the Orchestrator header and "All quiet"
+QUIET_COUNT=$(tail -100 WORKLOG.md | grep -B2 "All quiet" | grep -c "Orchestrator" || echo 0)
+
+# If 2 or more consecutive quiet entries exist, this would be the 3rd - disable instead
+if [ "$QUIET_COUNT" -ge 2 ]; then
+  echo "Two consecutive quiet periods detected - disabling automation"
+fi
+```
+
+Alternative check using the most recent entries:
+
+```bash
+# Get the last 2 orchestrator log entries
+LAST_ENTRIES=$(grep -E "(^### .*Orchestrator|All quiet)" WORKLOG.md | tail -4)
+
+# Check if both recent orchestrator entries were quiet
+if echo "$LAST_ENTRIES" | grep -q "All quiet" && \
+   [ $(echo "$LAST_ENTRIES" | grep -c "All quiet") -ge 2 ]; then
+  echo "Auto-disable triggered: two consecutive quiet periods"
+fi
+```
+
+### How to Disable
+
+When two consecutive quiet periods are detected:
+
+```bash
+curl -X PATCH "https://app.all-hands.dev/api/automation/v1/c202ca20-60d5-4f5b-9d53-3d7308c1d95b" \
+  -H "Authorization: Bearer ${OPENHANDS_API_KEY}" \
+  -H "Content-Type: application/json" \
+  -d '{"enabled": false}'
+```
+
+### WORKLOG Entry When Disabling
+
+```markdown
+### {timestamp} - Orchestrator
+
+🔒 **Auto-disabled due to inactivity**
+
+Two consecutive quiet periods detected - no new work to pick up.
+Automation has been disabled to prevent unnecessary runs.
+
+**To re-enable:**
+- OpenHands UI: https://app.all-hands.dev/automations → Find "OHTV Workflow Orchestrator" → Toggle enable
+- Or via API:
+  ```bash
+  curl -X PATCH "https://app.all-hands.dev/api/automation/v1/c202ca20-60d5-4f5b-9d53-3d7308c1d95b" \
+    -H "Authorization: Bearer ${OPENHANDS_API_KEY}" \
+    -H "Content-Type: application/json" \
+    -d '{"enabled": true}'
+  ```
+
+---
+```
+
+### Decision Flow
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  Before logging "All quiet":                                     │
+├─────────────────────────────────────────────────────────────────┤
+│  1. Check: Are there 2+ consecutive "All quiet" entries?        │
+│     └─ YES → DISABLE automation + log disable message + EXIT    │
+│     └─ NO  → Log normal "All quiet" entry + EXIT                │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+See [Disable Automation Skill](disable-automation.md) for complete details.
+
 ### Committing WORKLOG.md Updates
 
 **IMPORTANT:** WORKLOG.md updates MUST go to `main`, not to any feature branch.
