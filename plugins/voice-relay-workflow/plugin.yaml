@@ -1,19 +1,34 @@
 name: voice-relay-workflow
-version: 0.1.0
+version: 0.2.0
 description: |
   Automated PR workflow for the voice-relay project.
   
   Provides skills for:
+  - Issue expansion and triage (Phase 0)
+  - Priority assessment for ready issues
   - Spawning worker conversations via OH API
   - Checking PR/CI/review status
-  - Orchestrating the implementation→review→merge cycle
-  - Updating project plans with learnings
+  - Orchestrating the expansion→implementation→review→merge cycle
+  - Parallel work: expansion workers can run alongside PR workers
 
 author: jpshackelford
 repository: https://github.com/jpshackelford/.openhands
 
 # Skills provided by this plugin
 skills:
+  - name: expand-issue
+    path: skills/expand-issue.md
+    triggers:
+      - /expand-issue
+    description: Analyze and expand a GitHub issue with technical detail (root cause, proposed solution)
+    
+  - name: assess-priority
+    path: skills/assess-priority.md
+    triggers:
+      - /assess-priority
+      - /prioritize
+    description: Assess and prioritize ready issues for implementation
+    
   - name: spawn-conversation
     path: skills/spawn-conversation.md
     triggers:
@@ -31,7 +46,7 @@ skills:
     path: skills/orchestrate.md
     triggers:
       - /orchestrate
-    description: Main orchestration logic - assess state and dispatch work
+    description: Main orchestration logic - assess state, track workers, dispatch work
     
   - name: update-project-plan
     path: skills/update-project-plan.md
@@ -46,6 +61,12 @@ skills:
       - /prepare-merge
       - /merge
     description: Final merge preparation and execution
+    
+  - name: disable-automation
+    path: skills/disable-automation.md
+    triggers:
+      - /disable-automation
+    description: Auto-disable orchestrator after consecutive quiet periods
 
 # Environment variables this plugin expects
 env:

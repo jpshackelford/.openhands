@@ -9,7 +9,10 @@ triggers:
 
 Main orchestration logic for the voice-relay PR workflow. This skill is designed to run as a scheduled automation that wakes up periodically to assess state and dispatch work.
 
-The project work items are tracked as **GitHub Issues**. The orchestrator works through open issues sequentially (lowest number first) until all issues are complete.
+The project work items are tracked as **GitHub Issues**. Issues go through two phases:
+
+1. **Expansion Phase** - Issues are analyzed, expanded with technical detail, and labeled `ready`
+2. **Implementation Phase** - Ready issues are prioritized and implemented one at a time
 
 ## Usage
 
@@ -20,12 +23,35 @@ The project work items are tracked as **GitHub Issues**. The orchestrator works 
 This skill runs automatically via cron automation. It:
 1. **CHECK FOR HUMAN INSTRUCTIONS FIRST** - Read WORKLOG.md for any `## INSTRUCTION:` entries
 2. If human instructions exist, follow them before doing anything else
-3. Discovers any open PRs for the repo (there should be 0 or 1 at a time)
-4. Lists open GitHub issues to find pending work items
-5. Decides what action is needed based on current state
-6. Spawns a worker conversation if work is available
-7. Appends status update to WORKLOG.md on main
-8. Exits (next check happens on next cron trigger)
+3. **CHECK FOR ACTIVE WORKERS** - Parse WORKLOG.md for running conversations
+4. Discovers any open PRs for the repo (there should be 0 or 1 at a time)
+5. Lists open GitHub issues by label (`ready` vs needs expansion)
+6. Decides what action is needed based on current state
+7. Spawns worker conversation(s) if work is available
+8. Appends status update to WORKLOG.md on main
+9. Exits (next check happens on next cron trigger)
+
+## Parallel Work Model
+
+The orchestrator can run **two workers simultaneously**:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  PARALLEL WORK SLOTS                                             │
+├─────────────────────────────────────────────────────────────────┤
+│  SLOT 1: Expansion Worker (0 or 1 active)                       │
+│    - Analyzes issues, finds root cause, adds technical detail   │
+│    - Only touches issues (labels, comments) - no code changes   │
+│                                                                   │
+│  SLOT 2: PR Worker (0 or 1 active)                              │
+│    - Implementation, Review, or Merge worker                     │
+│    - Touches code, branches, PRs - must be serialized           │
+│                                                                   │
+│  ✅ Both slots can be filled simultaneously                      │
+│  ❌ Cannot have 2 expansion workers                              │
+│  ❌ Cannot have 2 PR workers                                     │
+└─────────────────────────────────────────────────────────────────┘
+```
 
 ## Workflow Overview
 
@@ -35,12 +61,15 @@ This skill runs automatically via cron automation. It:
 ├──────────────────────────────────────────────────────────────────┤
 │  1. READ WORKLOG.md for human instructions (FIRST!)             │
 │  2. If human instructions found → follow them, then exit        │
-│  3. Check PR status with lxa pr list (visibility)               │
-│  4. List open GitHub issues for pending work items               │
-│  5. Decide: Is there work to dispatch?                           │
-│  6. If yes: spawn worker conversation via OH API                 │
-│  7. Append status update to WORKLOG.md (on main!)               │
-│  8. Exit                                                         │
+│  3. PARSE WORKLOG.md for active workers (by conv ID)            │
+│  4. CHECK which workers are still running (API query)           │
+│  5. GATHER STATE:                                                │
+│     - Open PRs (lxa pr list)                                    │
+│     - Issues by label: ready, needs-triage, priority:*          │
+│  6. DECIDE what to spawn (see Decision Tree)                    │
+│  7. SPAWN worker(s) if slots available and work exists          │
+│  8. UPDATE WORKLOG.md with current state                        │
+│  9. EXIT                                                         │
 └──────────────────────────────────────────────────────────────────┘
 ```
 
@@ -106,100 +135,211 @@ Received instruction:
 
 Proceed with normal workflow (Step 2 onwards).
 
+## Step 2: Check for Active Workers
+
+Parse WORKLOG.md to find recently spawned workers, then verify if they're still running.
+
+### Extract Worker Info from WORKLOG.md
+
+Look for recent spawn entries with conversation IDs:
+
+```bash
+# Get last 100 lines, find spawn entries with conv IDs
+# Format in WORKLOG: | `abc1234` | expansion | Issue #9 - Title | timestamp |
+grep -E "^\| \`[a-f0-9]{7}\` \|" WORKLOG.md | tail -10
+```
+
+Or look for the "Active Workers" table format:
+
+```bash
+# Extract conv IDs and types from recent entries
+grep -A10 "Active Workers:" WORKLOG.md | tail -15
+```
+
+### Check if Conversations are Still Running
+
+For each conversation ID found, query the API:
+
+```bash
+# Check conversation status by ID prefix
+conv_id="abc1234"
+curl -s "https://app.all-hands.dev/api/v1/app-conversations/search?limit=50" \
+  -H "Authorization: Bearer ${OH_API_KEY}" \
+| jq -r ".items[] | select(.id | startswith(\"$conv_id\")) | {id: .id[0:7], status: .execution_status, title: .title}"
+```
+
+**Status values:**
+- `running` = worker is active, don't spawn duplicate
+- `finished` = worker completed
+- `error` / `stuck` = worker failed (may need attention)
+
+### Determine Available Slots
+
+```bash
+# Pseudo-code for slot availability
+ACTIVE_EXPANSION=false
+ACTIVE_PR_WORKER=false
+
+for each spawned_worker in WORKLOG.md (last 4 hours):
+    status = query_api(worker.conv_id)
+    if status == "running":
+        if worker.type == "expansion":
+            ACTIVE_EXPANSION=true
+        else:  # implementation, review, merge
+            ACTIVE_PR_WORKER=true
+
+CAN_SPAWN_EXPANSION = !ACTIVE_EXPANSION
+CAN_SPAWN_PR_WORKER = !ACTIVE_PR_WORKER
+```
+
 ## Gather State
 
-Use `gh` to discover open PRs, `lxa` for quick status, and GitHub issues for work items:
+Use `gh` to discover PRs and issues by label:
 
 ```bash
 # 1. Discover open PRs (usually 0 or 1)
-gh pr list --repo jpshackelford/voice-relay --state open --json number,title
-# Output: [{"number": 3, "title": "Add semantic search"}]  # or []
+gh pr list --repo jpshackelford/voice-relay --state open --json number,title,isDraft
+# Output: [{"number": 3, "title": "Add semantic search", "isDraft": false}]
 
 # 2. If a PR exists, get quick status with lxa
 lxa pr list "jpshackelford/voice-relay#3"
 # Output: oCR green ready 2
 # History codes: o=opened, C=changes requested, F=fixes pushed, A=approved, m=merged
 
-# 3. List open GitHub issues for pending work items (sorted by issue number)
-gh issue list --repo jpshackelford/voice-relay --state open --json number,title --jq 'sort_by(.number)'
-# Output: [{"number": 9, "title": "F1: Scope messages to sessions"}, ...]
+# 3. List issues needing expansion (no 'ready' label)
+gh issue list --repo jpshackelford/voice-relay --state open --json number,title,labels \
+  --jq '[.[] | select(.labels | map(.name) | contains(["ready"]) | not)] | sort_by(.number)'
+# Issues without 'ready' label need expansion
 
-# 4. Get details of the next issue to work on (lowest number)
-gh issue view 9 --repo jpshackelford/voice-relay --json number,title,body
+# 4. List ready issues (have 'ready' label)
+gh issue list --repo jpshackelford/voice-relay --state open --label "ready" --json number,title,labels \
+  --jq 'sort_by(.number)'
+
+# 5. Check for prioritized ready issues
+gh issue list --repo jpshackelford/voice-relay --state open --label "ready" --json number,title,labels \
+  --jq '[.[] | {number, title, priority: (.labels | map(.name) | map(select(startswith("priority:"))) | .[0])}]'
 ```
+
+### Issue Categories
+
+| Category | Label State | What to Do |
+|----------|-------------|------------|
+| Needs expansion | No `ready` label | Spawn expansion worker |
+| Ready, unprioritized | `ready` but no `priority:*` | Run `/assess-priority` inline |
+| Ready, prioritized | `ready` + `priority:*` | Spawn implementation worker for highest priority |
+| Blocked | Has `blocked` label | Skip until unblocked |
+| Needs info | Has `needs-info` label | Skip until reporter responds |
 
 ## Decision Tree
 
-| Current State | Action |
-|---------------|--------|
-| No open PRs + open issues exist | Spawn **implementation worker** for lowest-numbered issue |
-| PR exists, draft, CI failing | Wait (worker may still be active) |
-| PR exists, draft, CI green | Wait (worker finishing up) |
+### Expansion Slot (can run parallel to PR work)
+
+| Condition | Action |
+|-----------|--------|
+| `CAN_SPAWN_EXPANSION` + issues need expansion | Spawn **expansion worker** for oldest unexpanded issue |
+| `CAN_SPAWN_EXPANSION` + no issues need expansion | Slot idle (all issues expanded) |
+| `!CAN_SPAWN_EXPANSION` | Wait (expansion worker running) |
+
+### PR Slot (Implementation → Review → Merge)
+
+| Condition | Action |
+|-----------|--------|
+| `!CAN_SPAWN_PR_WORKER` | Wait (PR worker running) |
+| PR exists, draft, CI failing | Wait (impl worker may still be active) |
+| PR exists, draft, CI green | Wait (impl worker finishing up) |
 | PR exists, ready, no reviews yet | Wait (review bot running) |
 | PR exists, ready, 💬 > 0 | Spawn **review worker** |
-| PR exists, ready, 💬 = 0, good/acceptable taste | Spawn **merge worker** |
-| PR exists, ready, 💬 = 0, 3x acceptable | Spawn **merge worker** |
-| PR merged, more open issues | Spawn **implementation worker** for next issue |
-| PR merged, no open issues | Log completion, exit |
+| PR exists, ready, 💬 = 0, merge criteria met | Spawn **merge worker** |
+| No open PR + ready issues with priority | Spawn **impl worker** for highest priority ready issue |
+| No open PR + ready issues, no priority | Run `/assess-priority` inline, then spawn impl worker |
+| No open PR + no ready issues | Nothing to implement (wait for expansion) |
+
+### Combined Decision Flow
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  DECISION FLOW                                                   │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  1. CHECK EXPANSION SLOT                                         │
+│     ├─ Active expansion worker? → Skip to PR slot               │
+│     └─ Issues need expansion?                                    │
+│         ├─ YES → Spawn expansion worker (oldest issue)          │
+│         └─ NO  → Expansion slot idle                            │
+│                                                                  │
+│  2. CHECK PR SLOT                                                │
+│     ├─ Active PR worker? → Log status, exit                     │
+│     └─ Open PR exists?                                          │
+│         ├─ YES → Handle PR state (wait/review/merge)            │
+│         └─ NO  → Ready issues exist?                            │
+│                   ├─ YES → Prioritized?                         │
+│                   │         ├─ YES → Spawn impl (highest prio)  │
+│                   │         └─ NO  → /assess-priority, spawn    │
+│                   └─ NO  → Nothing to implement                 │
+│                                                                  │
+│  3. LOG STATUS TO WORKLOG.md                                    │
+│                                                                  │
+│  4. EXIT                                                        │
+└─────────────────────────────────────────────────────────────────┘
+```
 
 ## Avoiding Duplicate Work
 
-Before spawning a worker, check if any related conversations are still active. A conversation is **quiet** when its last event timestamp is older than `QUIET_PERIOD` (e.g., 7-15 minutes).
+The orchestrator tracks active workers via **WORKLOG.md** entries. Each spawn is logged with a 7-character conversation ID prefix, worker type, and what it's working on.
 
-### Using ohtv (Recommended)
+### Primary Method: WORKLOG.md Tracking
 
-Use `ohtv list` with the `--idle` flag to see active vs quiet conversations at a glance:
+When spawning a worker, log it in this format:
+
+```markdown
+**Active Workers:**
+| Conv ID | Type | Working On | Started |
+|---------|------|------------|---------|
+| `abc1234` | expansion | Issue #9 - Scope messages | 14:00 UTC |
+| `def5678` | implementation | Issue #7 - WebSocket | 13:15 UTC |
+```
+
+To check if a worker is still running:
 
 ```bash
-# Sync recent conversations (--quiet = minimal output for cron/automation)
+# 1. Extract recent conv IDs from WORKLOG.md
+CONV_IDS=$(grep -oE '\`[a-f0-9]{7}\`' WORKLOG.md | tr -d '`' | tail -10 | sort -u)
+
+# 2. Query API for each
+for cid in $CONV_IDS; do
+  curl -s "https://app.all-hands.dev/api/v1/app-conversations/search?limit=50" \
+    -H "Authorization: Bearer ${OH_API_KEY}" \
+  | jq -r ".items[] | select(.id | startswith(\"$cid\")) | \"\(.id[0:7]) \(.execution_status)\""
+done
+```
+
+### Backup Method: ohtv (Optional)
+
+Use `ohtv` for additional visibility, especially to verify what issues/PRs a conversation touched:
+
+```bash
+# Sync recent conversations
 ohtv sync --since $(date -u -d '4 hours ago' +%Y-%m-%dT%H:%M:%S) --quiet
 
 # Check conversations for this repo with idle time
-# Red = active (< threshold), Green = quiet (>= threshold)
 ohtv list --repo voice-relay --since 4h --idle 15
-```
 
-Example output:
-```
-ID      Source  Started          Idle   Events  Title
-abc123  cloud   2025-05-02 10:30 3m     42      [Impl] Add semantic search
-                                                 Refs: voice-relay#3
-def456  cloud   2025-05-02 09:15 47m    28      [Review] PR #2
-                                                 Refs: voice-relay#2
-```
-
-- **Red idle time** (e.g., `3m`) = conversation is active, don't spawn
-- **Green idle time** (e.g., `47m`) = conversation is quiet, safe to spawn
-
-### Why ohtv over direct API?
-
-`ohtv` uses heuristics to find repos related to a conversation by parsing:
-- `--repo` flags in gh commands
-- Git push output (`To https://github.com/owner/repo`)
-- PR/Issue URLs in commands and outputs
-- Clone commands
-- Merge success messages
-
-This finds conversations that worked on a repo even if `selected_repository` wasn't set correctly.
-
-### Additional ohtv commands
-
-```bash
-# See what repos a conversation touched
+# See what a conversation referenced (issues, PRs)
 ohtv refs CONV_ID
 
-# Filter by action type (e.g., only conversations that pushed)
-ohtv list --repo voice-relay --action pushed --idle
-
-# Check specific conversation stats
-ohtv show CONV_ID -S
+# Generate object references (requires LLM)
+ohtv gen objs -D
 ```
 
-### Decision Rule
+### Decision Rules
 
-Only spawn if:
-- All conversations show **green** idle time (>= QUIET_PERIOD)
-- OR no conversations found for this repo in the lookback window
+**For Expansion Slot:**
+- Only spawn if no `expansion` type worker shows `running` status
+
+**For PR Slot:**
+- Only spawn if no `implementation`, `review`, or `merge` type worker shows `running` status
+
+**Both slots can be filled simultaneously** - an expansion worker and a PR worker can run in parallel.
 
 ## Production Deployment Context
 
@@ -221,7 +361,58 @@ Only spawn if:
 
 Use `/spawn-conversation` skill to start worker conversations.
 
+### Expansion Worker (NEW)
+
+**Worker Type:** `expansion`
+**Slot:** Expansion slot (can run parallel to PR workers)
+
+```
+Repository: jpshackelford/voice-relay
+Title: [Expansion] Issue #{issue_number} - {issue_title}
+Prompt: |
+  You are expanding GitHub Issue #{issue_number} for the voice-relay project.
+  
+  **ISSUE TO EXPAND:**
+  - Issue: #{issue_number} - {issue_title}
+  - URL: https://github.com/jpshackelford/voice-relay/issues/{issue_number}
+  
+  Your job is to analyze this issue and add technical detail so it's ready for implementation.
+  
+  **FOR BUG REPORTS:**
+  1. Clone the repo and set up the environment
+  2. Attempt to reproduce the bug
+  3. If reproducible, investigate code to find root cause
+  4. Rewrite issue body with: Problem, Steps to Reproduce, Expected/Actual behavior
+  5. Add comment with: Root Cause Analysis, Proposed Fix, Files to modify
+  
+  **FOR ENHANCEMENTS:**
+  1. Understand the user need / pain point
+  2. Explore codebase to understand current architecture
+  3. Rewrite issue body with: Problem Statement, Proposed Solution, Acceptance Criteria
+  4. Add comment with: Technical Approach, Implementation Plan, Files affected
+  
+  **WHEN DONE:**
+  1. Add `ready` label: gh issue edit {issue_number} --add-label ready
+  2. Update WORKLOG.md on main with completion status
+  3. Exit
+  
+  **IF BLOCKED:**
+  - Can't reproduce bug → Add `needs-info` label, comment with questions
+  - Too vague → Add `needs-info` label, ask for clarification
+  - Should be split → Add `needs-split` label, suggest breakdown
+  - Do NOT add `ready` label if blocked
+  
+  See /expand-issue skill for detailed guidance.
+  
+Plugins: github:jpshackelford/.openhands/plugins/voice-relay-workflow@add-voice-relay-workflow-plugin
+Issue Number: {issue_number}
+Worker Type: expansion
+```
+
 ### Implementation Worker
+
+**Worker Type:** `implementation`
+**Slot:** PR slot (serialized with review/merge)
 
 ```
 Repository: jpshackelford/voice-relay
@@ -232,6 +423,10 @@ Prompt: |
   **ISSUE TO IMPLEMENT:**
   - Issue: #{issue_number} - {issue_title}
   - URL: https://github.com/jpshackelford/voice-relay/issues/{issue_number}
+  - Priority: {priority_label}
+  
+  This issue has already been expanded with technical detail. Read the issue 
+  description AND comments for the implementation approach.
   
   **PRODUCTION CONTEXT:**
   - App auto-deploys to vr.chorecraft.net on merge to main
@@ -239,28 +434,34 @@ Prompt: |
   - All schema changes MUST include migrations
   - Migrations must be backward-compatible with existing data
   
-  1. Read the issue description carefully: gh issue view {issue_number}
-  2. Review acceptance criteria in the issue - these define "done"
+  1. Read the issue description AND comments: gh issue view {issue_number} --comments
+  2. The technical approach comment tells you what to build
   3. Create a feature branch from main (ensure main is up-to-date)
-  4. Implement the feature with tests (target >80% coverage for new code)
-  5. If adding/modifying database schema:
+  4. Implement following the approach in the issue comments
+  5. Write tests (target >80% coverage for new code)
+  6. If adding/modifying database schema:
      - Create migration files (up and down)
      - Test migrations work on fresh DB and existing data
-  6. Run lints and type checks, fix any issues
-  7. Commit with clear messages, push, create a DRAFT PR
-  8. Link PR to issue: Include "Fixes #{issue_number}" in PR description
-  9. Monitor CI, fix any failures until green
-  10. Once CI is green, REFLECT:
+  7. Run lints and type checks, fix any issues
+  8. Commit with clear messages, push, create a DRAFT PR
+  9. Link PR to issue: Include "Fixes #{issue_number}" in PR description
+  10. Monitor CI, fix any failures until green
+  11. Once CI is green, REFLECT:
       - Are all acceptance criteria from the issue met?
       - Note any learnings or follow-up items
-  11. Move PR from draft to ready (triggers review bot)
-  12. Exit - review handling is a separate conversation
+  12. Move PR from draft to ready (triggers review bot)
+  13. Update WORKLOG.md on main with PR link
+  14. Exit - review handling is a separate conversation
   
 Plugins: github:jpshackelford/.openhands/plugins/voice-relay-workflow@add-voice-relay-workflow-plugin
 Issue Number: {issue_number}
+Worker Type: implementation
 ```
 
 ### Review Worker
+
+**Worker Type:** `review`
+**Slot:** PR slot (serialized with implementation/merge)
 
 ```
 Repository: jpshackelford/voice-relay  
@@ -291,13 +492,18 @@ Prompt: |
      - Did you learn anything that impacts other issues?
      - If so, add comments to relevant issues
   9. Move PR back to ready: gh pr ready {number}
-  10. Exit - next review round is a separate conversation
+  10. Update WORKLOG.md on main with status
+  11. Exit - next review round is a separate conversation
 
 Plugins: github:jpshackelford/.openhands/plugins/voice-relay-workflow@add-voice-relay-workflow-plugin
 PR Number: {number}
+Worker Type: review
 ```
 
 ### Merge Worker
+
+**Worker Type:** `merge`
+**Slot:** PR slot (serialized with implementation/review)
 
 ```
 Repository: jpshackelford/voice-relay
@@ -338,46 +544,103 @@ PR Number: {number}
 
 ## WORKLOG.md Updates
 
-After each orchestrator run, append a status update to `WORKLOG.md` in the repo root. This serves as a persistent log of all workflow activity.
+After each orchestrator run, append a status update to `WORKLOG.md` in the repo root. This serves as:
+1. **Persistent log** of all workflow activity
+2. **Worker tracking** - conversation IDs and what they're doing
+3. **Human visibility** - anyone can see what's happening
 
-### Log Entry Format
+### Standard Log Entry Format
 
-Always include:
-- Timestamp (UTC)
-- Current state summary
-- Action taken (if any)
-- Links to PRs and conversations
+Always include the **Active Workers** table so we can track running conversations:
 
 ```markdown
 ### 2025-05-05 10:30 UTC - Orchestrator
 
+**Active Workers:**
+| Conv ID | Type | Working On | Status |
+|---------|------|------------|--------|
+| `abc1234` | expansion | Issue #10 - QR code flow | running |
+| `def5678` | implementation | Issue #9 - Scope messages | running |
+
 **Current State:**
-- [PR #5](https://github.com/jpshackelford/voice-relay/pull/5): `oCR green ready 💬2` (2 unresolved threads)
-- Open issues: #9, #10, #11, #12
+- [PR #5](https://github.com/jpshackelford/voice-relay/pull/5): `oCR green ready 💬2`
+- Issues needing expansion: #11, #12
+- Ready issues: #9 (priority:high), #10 (priority:medium)
 
 **Action Taken:**
-🚀 Spawned review worker to address feedback
-- Conversation: https://app.all-hands.dev/conversations/{conv_id}
-
-**What Changed Since Last Run:**
-- PR moved from draft → ready
-- CI now passing (was failing)
-- 1 review thread resolved
+✅ Both worker slots occupied - no action needed
 
 ---
 ```
 
 ### When Spawning a Worker
 
+Include the conversation ID (first 7 chars) in the Active Workers table:
+
 ```markdown
 ### 2025-05-05 14:00 UTC - Orchestrator
 
-🚀 **Launched: Implementation Worker**
+**Active Workers:**
+| Conv ID | Type | Working On | Status |
+|---------|------|------------|--------|
+| `ghi9012` | expansion | Issue #11 - Session View | **NEW** |
 
-Starting work on: Issue #9 - F1: Scope messages to sessions
-- No PR yet - will create one
-- Issue URL: https://github.com/jpshackelford/voice-relay/issues/9
-- Conversation: https://app.all-hands.dev/conversations/{conv_id}
+**Spawned: Expansion Worker**
+- Issue: [#11 - Session View](https://github.com/jpshackelford/voice-relay/issues/11)
+- Conversation: [`ghi9012`](https://app.all-hands.dev/conversations/ghi9012...)
+
+**Current State:**
+- No open PRs
+- Ready issues: #9, #10 (awaiting implementation)
+- Issues needing expansion: #11 (now being expanded), #12
+
+---
+```
+
+### When Spawning Multiple Workers (Parallel)
+
+```markdown
+### 2025-05-05 14:30 UTC - Orchestrator
+
+**Active Workers:**
+| Conv ID | Type | Working On | Status |
+|---------|------|------------|--------|
+| `abc1234` | expansion | Issue #12 - Join via QR | **NEW** |
+| `def5678` | implementation | Issue #9 - Scope messages | **NEW** |
+
+**Spawned: 2 Workers (parallel)**
+
+1. **Expansion Worker**
+   - Issue: [#12 - Join via QR](https://github.com/jpshackelford/voice-relay/issues/12)
+   - Conversation: [`abc1234`](https://app.all-hands.dev/conversations/abc1234...)
+
+2. **Implementation Worker**  
+   - Issue: [#9 - Scope messages](https://github.com/jpshackelford/voice-relay/issues/9) (priority:high)
+   - Conversation: [`def5678`](https://app.all-hands.dev/conversations/def5678...)
+
+---
+```
+
+### When Workers Complete
+
+Update status when checking workers:
+
+```markdown
+### 2025-05-05 15:00 UTC - Orchestrator
+
+**Active Workers:**
+| Conv ID | Type | Working On | Status |
+|---------|------|------------|--------|
+| `abc1234` | expansion | Issue #12 | finished ✓ |
+| `def5678` | implementation | Issue #9 | running |
+
+**Worker Completed:** `abc1234` (expansion)
+- Issue #12 now has `ready` label
+
+**Current State:**
+- PR #6 in progress (Issue #9)
+- Ready issues: #10, #12
+- No issues need expansion 🎉
 
 ---
 ```
@@ -385,12 +648,17 @@ Starting work on: Issue #9 - F1: Scope messages to sessions
 ### When No Action Needed
 
 ```markdown
-### 2025-05-05 14:30 UTC - Orchestrator
+### 2025-05-05 15:30 UTC - Orchestrator
 
-✅ **All quiet** - No action needed
+**Active Workers:**
+| Conv ID | Type | Working On | Status |
+|---------|------|------------|--------|
+| `def5678` | implementation | Issue #9 | running |
 
-- [PR #5](https://github.com/jpshackelford/voice-relay/pull/5) is in review (waiting for reviewer)
-- No active conversations found
+✅ **All quiet** - PR slot occupied, expansion slot empty (nothing to expand)
+
+- [PR #6](https://github.com/jpshackelford/voice-relay/pull/6) in progress
+- All issues expanded
 - Next check in ~30 minutes
 
 ---
@@ -400,6 +668,11 @@ Starting work on: Issue #9 - F1: Scope messages to sessions
 
 ```markdown
 ### 2025-05-05 18:00 UTC - Orchestrator
+
+**Active Workers:**
+| Conv ID | Type | Working On | Status |
+|---------|------|------------|--------|
+| (none) | - | - | - |
 
 🎉 **All Issues Complete!**
 

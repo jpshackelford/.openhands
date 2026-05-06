@@ -1,34 +1,73 @@
 # Voice Relay Workflow Plugin
 
-Automated PR workflow for the [voice-relay](https://github.com/jpshackelford/voice-relay) project. Orchestrates the full development cycle: **one GitHub Issue at a time**, each going through implementation → review → merge, until all issues are closed.
+Automated PR workflow for the [voice-relay](https://github.com/jpshackelford/voice-relay) project. Orchestrates the full development cycle with **issue expansion, prioritization, and parallel work**.
 
 ## Overview
 
-Work items are tracked as **GitHub Issues** filed against the repository. The orchestrator works through open issues **one at a time** (lowest issue number first):
+Work items are tracked as **GitHub Issues**. Each issue goes through two phases:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
 │                         PROJECT LIFECYCLE                            │
 ├─────────────────────────────────────────────────────────────────────┤
-│  Issue #9:  F1: Scope messages to sessions → PR → Review → Merge ✓ │
-│  Issue #10: F2: Workspace Home             → PR → Review → Merge ✓ │
-│  Issue #11: F3: Session View               → PR → Review → Merge ✓ │
-│  Issue #12: F4: Join via QR                → PR → Review → Merge ✓ │
+│  PHASE 0: EXPANSION (parallel track)                                │
+│  ┌─────────────────────────────────────────────────────────────┐   │
+│  │ Issue #9 (bug)     → Investigate → Root cause + fix plan    │   │
+│  │ Issue #10 (feature)→ Analyze → Requirements + approach      │   │
+│  │ → Label "ready" when expanded                                │   │
+│  └─────────────────────────────────────────────────────────────┘   │
+│                                                                      │
+│  PHASE 1: PRIORITIZATION                                            │
+│  Assess impact/urgency → Assign priority:critical/high/medium/low   │
+│                                                                      │
+│  PHASE 2: IMPLEMENTATION (highest priority first)                   │
+│  Issue #9 (priority:high)  → PR → Review → Merge ✓                 │
+│  Issue #10 (priority:medium)→ PR → Review → Merge ✓                │
 │  → ALL ISSUES CLOSED                                                 │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-Each issue follows this cycle:
+## Parallel Work Model
+
+The orchestrator can run **two workers simultaneously**:
+
+| Slot | Worker Types | Purpose |
+|------|--------------|---------|
+| **Expansion Slot** | `expansion` | Analyze issues, add technical detail |
+| **PR Slot** | `implementation`, `review`, `merge` | Code changes, PR lifecycle |
+
+✅ Both slots can be filled at the same time  
+❌ Cannot have 2 workers in the same slot
+
+## Issue Lifecycle
+
 ```
-GitHub Issue → Implementation → CI → Review → Address Feedback → Merge → Issue Closed
-                    ↑                                  │
-                    └──── Comment learnings on issues ─┘
+New Issue → Expansion → Ready → Prioritized → Implementation → PR → Review → Merge
+    │           │          │         │              │                         │
+    │           │          │         │              └── PR Slot ──────────────┘
+    │           │          │         │
+    │           │          │         └── /assess-priority (inline)
+    │           │          │
+    │           │          └── Has 'ready' label
+    │           │
+    │           └── Expansion Slot (parallel)
+    │
+    └── No 'ready' label
 ```
 
-The workflow is driven by:
-1. **Orchestrator automation** - Cron job that wakes up periodically to check state and dispatch work
-2. **Worker conversations** - Spawned via OH API to do focused tasks (implement, review, merge)
-3. **lxa for visibility** - `lxa pr list` for quick status checks
+## Worker Tracking via WORKLOG.md
+
+All active workers are tracked in WORKLOG.md on main:
+
+```markdown
+**Active Workers:**
+| Conv ID | Type | Working On | Status |
+|---------|------|------------|--------|
+| `abc1234` | expansion | Issue #10 - QR code flow | running |
+| `def5678` | implementation | Issue #9 - Scope messages | running |
+```
+
+Humans and the orchestrator can see exactly what's running and what each conversation is doing.
 
 ## lxa for Visibility
 
@@ -44,14 +83,46 @@ lxa pr list "jpshackelford/voice-relay#<PR_NUMBER>"
 
 ## Available Skills
 
+### Issue Expansion & Prioritization (Phase 0-1)
+
 | Skill | Trigger | Purpose |
 |-------|---------|---------|
+| [Expand Issue](skills/expand-issue.md) | `/expand-issue` | Analyze issue, find root cause (bugs), add technical detail |
+| [Assess Priority](skills/assess-priority.md) | `/assess-priority` | Evaluate ready issues, assign priority labels |
+
+### Orchestration & Workers
+
+| Skill | Trigger | Purpose |
+|-------|---------|---------|
+| [Orchestrate](skills/orchestrate.md) | `/orchestrate` | Main decision loop - track workers, dispatch work |
 | [Spawn Conversation](skills/spawn-conversation.md) | `/spawn-conversation` | Start OH conversation via API |
+
+### PR Lifecycle (Phase 2)
+
+| Skill | Trigger | Purpose |
+|-------|---------|---------|
 | [PR Workflow Status](skills/pr-workflow-status.md) | `/pr-workflow-status` | Get PR state using lxa + gh |
-| [Orchestrate](skills/orchestrate.md) | `/orchestrate` | Main decision loop |
 | [Update Project Plan](skills/update-project-plan.md) | `/update-plan` | Reflect and update docs |
 | [Prepare and Merge](skills/prepare-and-merge.md) | `/prepare-merge` | Final merge workflow |
+
+### Automation Management
+
+| Skill | Trigger | Purpose |
+|-------|---------|---------|
 | [Disable Automation](skills/disable-automation.md) | `/disable-automation` | Auto-disable on consecutive quiet periods |
+
+## Labels Reference
+
+| Label | Meaning |
+|-------|---------|
+| `ready` | Issue expanded with technical detail, ready for implementation |
+| `needs-info` | Cannot proceed without more info from reporter |
+| `needs-split` | Issue too large, should be broken into smaller issues |
+| `blocked` | Blocked by external factors |
+| `priority:critical` | Blocking/urgent - do immediately |
+| `priority:high` | Important - do soon |
+| `priority:medium` | Standard priority |
+| `priority:low` | Nice to have |
 
 ## Auto-Disable Behavior
 
