@@ -1,5 +1,5 @@
 name: voice-relay-workflow
-version: 0.2.0
+version: 0.3.0
 description: |
   Automated PR workflow for the voice-relay project.
   
@@ -10,6 +10,7 @@ description: |
   - Checking PR/CI/review status
   - Orchestrating the expansion→implementation→review→merge cycle
   - Parallel work: expansion workers can run alongside PR workers
+  - Worklog housekeeping: archive old entries, preserve 6hr productive context
 
 author: jpshackelford
 repository: https://github.com/jpshackelford/.openhands
@@ -67,6 +68,12 @@ skills:
     triggers:
       - /disable-automation
     description: Auto-disable orchestrator after consecutive quiet periods
+    
+  - name: truncate-worklog
+    path: skills/truncate-worklog.md
+    triggers:
+      - /truncate-worklog
+    description: Archive old worklog entries while preserving 6 hours of productive work context
 
 # Environment variables this plugin expects
 env:

@@ -59,6 +59,8 @@ The orchestrator can run **two workers simultaneously**:
 ┌──────────────────────────────────────────────────────────────────┐
 │  ORCHESTRATOR WAKE-UP                                            │
 ├──────────────────────────────────────────────────────────────────┤
+│  0. SETUP: Install tools (lxa, ohtv)                            │
+│  0.5. HOUSEKEEPING: Truncate worklog if large (>300 lines)      │
 │  1. READ WORKLOG.md for human instructions (FIRST!)             │
 │  2. If human instructions found → follow them, then exit        │
 │  3. PARSE WORKLOG.md for active workers (by conv ID)            │
@@ -88,6 +90,136 @@ lxa repo add jpshackelford/voice-relay 2>/dev/null || true
 # Sync recent ohtv data
 ohtv sync --since $(date -u -d '4 hours ago' +%Y-%m-%dT%H:%M:%S) --quiet
 ```
+
+## Step 0.5: Housekeeping - Truncate Worklog
+
+If the worklog is getting large, archive old entries to keep the file manageable and ensure agents have focused context on recent productive work.
+
+```bash
+# Only run truncation if WORKLOG.md is large (>300 lines)
+WORKLOG_LINES=$(wc -l < WORKLOG.md 2>/dev/null || echo 0)
+if [ "$WORKLOG_LINES" -gt 300 ]; then
+  echo "📦 WORKLOG.md has $WORKLOG_LINES lines - running truncation"
+  
+  # Run the truncation script (see /truncate-worklog skill for full implementation)
+  python3 << 'TRUNCATE_SCRIPT'
+import re
+import os
+from datetime import datetime, timedelta, timezone
+from collections import defaultdict
+
+def is_productive(content):
+    """Determine if entry represents productive work (not just status checks)."""
+    productive = ['🚀 **Launched:', '🚀 **Spawned:', '✅ **Completed:', '✅ **Merged:',
+                  '✅ **Expanded', '✅ **Addressed', '✅ **Created:', '📋 **Following',
+                  '🔒 **Auto-disabled']
+    status = ['⏳ **Waiting**', '✅ **All quiet**', 'Action Taken: None', 'Action Taken:\nNone']
+    
+    for s in status:
+        if s in content:
+            return False
+    for p in productive:
+        if p in content:
+            return True
+    return False
+
+def truncate_worklog(repo_path="."):
+    worklog_path = os.path.join(repo_path, "WORKLOG.md")
+    with open(worklog_path, 'r') as f:
+        content = f.read()
+    
+    parts = re.split(r'(^## Log$)', content, maxsplit=1, flags=re.MULTILINE)
+    if len(parts) < 3:
+        return
+    
+    header = parts[0] + parts[1]
+    entries_section = parts[2]
+    
+    entries = []
+    for raw in re.split(r'\n---\n', entries_section):
+        raw = raw.strip()
+        if not raw:
+            continue
+        match = re.match(r'^### (\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}) UTC', raw)
+        if not match:
+            continue
+        date_str, time_str = match.groups()
+        ts = datetime.strptime(f"{date_str} {time_str}", "%Y-%m-%d %H:%M").replace(tzinfo=timezone.utc)
+        entries.append({'timestamp': ts, 'date': date_str, 'content': raw, 'productive': is_productive(raw)})
+    
+    if not entries:
+        return
+    
+    # Calculate cutoff: keep entries spanning 6 hours of productive work
+    productive = sorted([e for e in entries if e['productive']], key=lambda e: e['timestamp'], reverse=True)
+    if not productive:
+        return  # Keep everything if no productive work
+    
+    newest, oldest_in_window = productive[0]['timestamp'], productive[0]['timestamp']
+    for e in productive:
+        oldest_in_window = e['timestamp']
+        if newest - oldest_in_window >= timedelta(hours=6):
+            break
+    
+    to_keep = [e for e in entries if e['timestamp'] >= oldest_in_window]
+    to_archive = [e for e in entries if e['timestamp'] < oldest_in_window]
+    
+    if not to_archive:
+        print("✅ Nothing to archive")
+        return
+    
+    # Archive old entries by date
+    by_date = defaultdict(list)
+    for e in to_archive:
+        by_date[e['date']].append(e)
+    
+    for date, date_entries in sorted(by_date.items()):
+        date_entries.sort(key=lambda e: e['timestamp'])
+        archive_file = os.path.join(repo_path, f"WORKLOG_ARCHIVE_{date}.md")
+        archive_content = "\n\n---\n".join(e['content'] for e in date_entries)
+        
+        if os.path.exists(archive_file):
+            with open(archive_file, 'a') as f:
+                f.write(f"\n\n---\n{archive_content}")
+        else:
+            with open(archive_file, 'w') as f:
+                f.write(f"# Voice Relay Worklog Archive - {date}\n\nArchived entries from WORKLOG.md.\n\n---\n\n{archive_content}")
+        print(f"📦 Archived {len(date_entries)} entries to WORKLOG_ARCHIVE_{date}.md")
+    
+    # Rewrite WORKLOG.md
+    to_keep.sort(key=lambda e: e['timestamp'])
+    new_content = f"{header}\n\n" + "\n\n---\n".join(e['content'] for e in to_keep) + "\n"
+    with open(worklog_path, 'w') as f:
+        f.write(new_content)
+    print(f"✅ WORKLOG.md updated - kept {len(to_keep)} entries")
+
+truncate_worklog(".")
+TRUNCATE_SCRIPT
+
+  # Commit archived files if any were created
+  if git status --porcelain | grep -q "WORKLOG"; then
+    git add WORKLOG.md WORKLOG_ARCHIVE_*.md 2>/dev/null || true
+    git commit -m "chore: archive worklog entries older than 6hr productive window" || true
+    git push origin main || true
+  fi
+fi
+```
+
+### What Gets Archived
+
+The truncation preserves **at least 6 hours of productive work context**:
+
+| Entry Type | Counts Toward 6hr Span? | Examples |
+|------------|------------------------|----------|
+| **Productive** | ✅ Yes | `🚀 Launched`, `✅ Merged`, `✅ Completed` |
+| **Status** | ❌ No | `⏳ Waiting`, `All quiet` |
+
+This ensures:
+- Agents have meaningful context about recent work
+- Quiet periods don't result in an empty worklog
+- The file stays manageable (<300 lines typically)
+
+See `/truncate-worklog` skill for the full algorithm and edge case handling.
 
 ## Step 1: Check for Human Instructions
 
