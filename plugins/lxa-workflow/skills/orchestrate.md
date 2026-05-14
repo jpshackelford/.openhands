@@ -382,7 +382,7 @@ Self-reviewing [PR #42](https://github.com/jpshackelford/lxa/pull/42): Add board
 **NOTE:** Update this ID after creating the automation.
 
 ```
-<AUTOMATION_ID_PLACEHOLDER>
+54a6d9ad-d1e3-462b-8f74-b7fc6da7de71
 ```
 
 ### Detection Logic

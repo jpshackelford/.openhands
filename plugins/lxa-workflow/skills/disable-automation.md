@@ -26,7 +26,7 @@ The orchestrator should disable itself when it detects **two consecutive "quiet"
 
 **CRITICAL:** This automation's ID is:
 ```
-<AUTOMATION_ID_PLACEHOLDER>
+54a6d9ad-d1e3-462b-8f74-b7fc6da7de71
 ```
 
 This ID identifies the "LXA Workflow Orchestrator" automation in OpenHands Cloud. Use this exact ID when making the disable API call.
@@ -36,7 +36,7 @@ This ID identifies the "LXA Workflow Orchestrator" automation in OpenHands Cloud
 Make a PATCH request to the OpenHands automation API:
 
 ```bash
-curl -X PATCH "https://app.all-hands.dev/api/automation/v1/<AUTOMATION_ID_PLACEHOLDER>" \
+curl -X PATCH "https://app.all-hands.dev/api/automation/v1/54a6d9ad-d1e3-462b-8f74-b7fc6da7de71" \
   -H "Authorization: Bearer ${OPENHANDS_API_KEY}" \
   -H "Content-Type: application/json" \
   -d '{"enabled": false}'
@@ -47,7 +47,7 @@ curl -X PATCH "https://app.all-hands.dev/api/automation/v1/<AUTOMATION_ID_PLACEH
 Success (HTTP 200):
 ```json
 {
-  "id": "<AUTOMATION_ID_PLACEHOLDER>",
+  "id": "54a6d9ad-d1e3-462b-8f74-b7fc6da7de71",
   "name": "LXA Workflow Orchestrator",
   "enabled": false,
   ...
@@ -59,7 +59,7 @@ Success (HTTP 200):
 After disabling, verify the automation is disabled:
 
 ```bash
-curl -s "https://app.all-hands.dev/api/automation/v1/<AUTOMATION_ID_PLACEHOLDER>" \
+curl -s "https://app.all-hands.dev/api/automation/v1/54a6d9ad-d1e3-462b-8f74-b7fc6da7de71" \
   -H "Authorization: Bearer ${OPENHANDS_API_KEY}" | jq '.enabled, .name'
 ```
 
@@ -107,7 +107,7 @@ To re-enable:
 
 OR run:
 ```bash
-curl -X PATCH "https://app.all-hands.dev/api/automation/v1/<AUTOMATION_ID_PLACEHOLDER>" \
+curl -X PATCH "https://app.all-hands.dev/api/automation/v1/54a6d9ad-d1e3-462b-8f74-b7fc6da7de71" \
   -H "Authorization: Bearer ${OPENHANDS_API_KEY}" \
   -H "Content-Type: application/json" \
   -d '{"enabled": true}'
@@ -122,7 +122,7 @@ To re-enable the automation (via API or UI):
 
 ### Via API
 ```bash
-curl -X PATCH "https://app.all-hands.dev/api/automation/v1/<AUTOMATION_ID_PLACEHOLDER>" \
+curl -X PATCH "https://app.all-hands.dev/api/automation/v1/54a6d9ad-d1e3-462b-8f74-b7fc6da7de71" \
   -H "Authorization: Bearer ${OPENHANDS_API_KEY}" \
   -H "Content-Type: application/json" \
   -d '{"enabled": true}'
