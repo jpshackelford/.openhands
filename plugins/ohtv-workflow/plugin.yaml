@@ -1,13 +1,17 @@
 name: ohtv-workflow
-version: 0.1.0
+version: 0.2.0
 description: |
-  Automated PR workflow for the ohtv project.
+  Automated PR workflow for the ohtv project with issue expansion,
+  prioritization, and parallel work support.
 
   Provides skills for:
+  - Issue expansion and technical analysis
+  - Priority assessment for ready issues
   - Spawning worker conversations via OH API
   - Checking PR/CI/review status
   - Manual blackbox testing with documented results
-  - Orchestrating the implementation→testing→review→merge cycle
+  - Worklog housekeeping and archival
+  - Orchestrating the full issue-to-merge cycle
 
 author: jpshackelford
 repository: https://github.com/jpshackelford/.openhands
@@ -46,6 +50,38 @@ skills:
       - /prepare-merge
       - /merge
     description: Final merge preparation and execution
+
+  - name: expand-issue
+    path: skills/expand-issue.md
+    triggers:
+      - /expand-issue
+    description: Analyze and expand a GitHub issue with technical detail
+
+  - name: assess-priority
+    path: skills/assess-priority.md
+    triggers:
+      - /assess-priority
+      - /prioritize
+    description: Assess and prioritize ready issues for implementation
+
+  - name: truncate-worklog
+    path: skills/truncate-worklog.md
+    triggers:
+      - /truncate-worklog
+    description: Archive old worklog entries while preserving recent productive work context
+
+  - name: update-project-plan
+    path: skills/update-project-plan.md
+    triggers:
+      - /update-plan
+      - /reflect
+    description: Reflect on learnings and update issue comments with notes
+
+  - name: disable-automation
+    path: skills/disable-automation.md
+    triggers:
+      - /disable-automation
+    description: Auto-disable on consecutive quiet periods
 
 # Environment variables this plugin expects
 env:

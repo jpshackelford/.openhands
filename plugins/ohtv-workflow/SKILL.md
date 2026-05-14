@@ -1,26 +1,49 @@
 # OHTV Workflow Plugin
 
-Automated PR workflow for the [ohtv](https://github.com/jpshackelford/ohtv) project. Orchestrates the full development cycle: **issue → implementation → manual testing → review → merge**.
+Automated PR workflow for the [ohtv](https://github.com/jpshackelford/ohtv) project. Orchestrates the full development cycle with **issue expansion, prioritization, and parallel work support**.
 
 ## Overview
 
-Unlike design-document-driven projects, ohtv uses **GitHub issues and PRs exclusively** as the source of truth. The orchestrator picks up existing PRs and advances them through completion.
+Work items are tracked as **GitHub Issues**. Each issue goes through two phases:
 
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│                         PR LIFECYCLE                                 │
-├─────────────────────────────────────────────────────────────────────┤
-│  Implementation → CI Green → DOCS → TESTING → Review → Merge        │
-│                                 ↑        ↑                           │
-│                           (update    (test what's                    │
-│                            first)     documented)                    │
-└─────────────────────────────────────────────────────────────────────┘
++---------------------------------------------------------------------+
+|                         PROJECT LIFECYCLE                            |
++---------------------------------------------------------------------+
+|  PHASE 0: EXPANSION (parallel track)                                |
+|  +-------------------------------------------------------------+   |
+|  | Issue #9 (bug)     -> Investigate -> Root cause + fix plan  |   |
+|  | Issue #10 (feature)-> Analyze -> Requirements + approach    |   |
+|  | -> Label "ready" when expanded                               |   |
+|  +-------------------------------------------------------------+   |
+|                                                                      |
+|  PHASE 1: PRIORITIZATION                                            |
+|  Assess impact/urgency -> Assign priority:critical/high/medium/low  |
+|                                                                      |
+|  PHASE 2: IMPLEMENTATION (highest priority first)                   |
+|  Issue #9 (priority:high)  -> PR -> Docs -> Testing -> Review ->    |
+|  Merge                                                               |
+|  -> ALL ISSUES CLOSED                                                |
++---------------------------------------------------------------------+
 ```
+
+## Parallel Work Model
+
+The orchestrator can run **two workers simultaneously**:
+
+| Slot | Worker Types | Purpose |
+|------|--------------|---------|
+| **Expansion Slot** | `expansion` | Analyze issues, add technical detail |
+| **PR Slot** | `implementation`, `testing`, `review`, `merge` | Code changes, PR lifecycle |
+
+Both slots can be filled at the same time. Cannot have 2 workers in the same slot.
 
 **Key differences from other projects:**
-1. **Documentation first**: README.md is updated BEFORE testing, so testers verify documented behavior
-2. **Manual testing required**: Every PR must have documented test results before code review
-3. **Spot-checks before merge**: If significant changes occurred during review, both docs and tests are re-verified
+1. **Issue expansion**: Transform vague issues into well-defined, implementable work items
+2. **Priority-based work**: Issues are scored and labeled with priority levels
+3. **Documentation first**: README.md is updated BEFORE testing, so testers verify documented behavior
+4. **Manual testing required**: Every PR must have documented test results before code review
+5. **Worklog housekeeping**: Auto-archive old entries to keep context focused
 
 ## lxa for Visibility
 
@@ -36,14 +59,64 @@ lxa pr list "jpshackelford/ohtv#<PR_NUMBER>"
 
 ## Available Skills
 
+### Issue Expansion and Prioritization (Phase 0-1)
+
 | Skill | Trigger | Purpose |
 |-------|---------|---------|
+| [Expand Issue](skills/expand-issue.md) | `/expand-issue` | Analyze issue, find root cause (bugs), add technical detail |
+| [Assess Priority](skills/assess-priority.md) | `/assess-priority` | Evaluate ready issues, assign priority labels |
+
+### Orchestration and Workers
+
+| Skill | Trigger | Purpose |
+|-------|---------|---------|
+| [Orchestrate](skills/orchestrate.md) | `/orchestrate` | Main decision loop - track workers, dispatch work |
 | [Spawn Conversation](skills/spawn-conversation.md) | `/spawn-conversation` | Start OH conversation via API |
+
+### PR Lifecycle (Phase 2)
+
+| Skill | Trigger | Purpose |
+|-------|---------|---------|
 | [PR Workflow Status](skills/pr-workflow-status.md) | `/pr-workflow-status` | Get PR state using lxa + gh |
-| [Orchestrate](skills/orchestrate.md) | `/orchestrate` | Main decision loop |
 | [Manual Test](skills/manual-test.md) | `/manual-test` | Run manual blackbox tests and post results |
+| [Update Project Plan](skills/update-project-plan.md) | `/update-plan` | Reflect and update docs with learnings |
 | [Prepare and Merge](skills/prepare-and-merge.md) | `/prepare-merge` | Final merge workflow |
+
+### Automation Management
+
+| Skill | Trigger | Purpose |
+|-------|---------|---------|
+| [Truncate Worklog](skills/truncate-worklog.md) | `/truncate-worklog` | Archive old entries, preserve 6hr productive context |
 | [Disable Automation](skills/disable-automation.md) | `/disable-automation` | Auto-disable on consecutive quiet periods |
+
+## Issue Lifecycle
+
+```
+New Issue -> Expansion -> Ready -> Prioritized -> Implementation -> PR -> Review -> Merge
+    |           |          |         |              |                         |
+    |           |          |         |              +-- PR Slot --------------+
+    |           |          |         |
+    |           |          |         +-- /assess-priority (inline)
+    |           |          |
+    |           |          +-- Has 'ready' label
+    |           |
+    |           +-- Expansion Slot (parallel)
+    |
+    +-- No 'ready' label
+```
+
+## Labels Reference
+
+| Label | Meaning |
+|-------|---------|
+| `ready` | Issue expanded with technical detail, ready for implementation |
+| `needs-info` | Cannot proceed without more info from reporter |
+| `needs-split` | Issue too large, should be broken into smaller issues |
+| `blocked` | Blocked by external factors |
+| `priority:critical` | Blocking/urgent - do immediately |
+| `priority:high` | Important - do soon |
+| `priority:medium` | Standard priority |
+| `priority:low` | Nice to have |
 
 ## Auto-Disable Behavior
 
@@ -52,14 +125,29 @@ The orchestrator automatically disables itself when it detects **two consecutive
 **Automation ID:** `c202ca20-60d5-4f5b-9d53-3d7308c1d95b`
 
 To re-enable after auto-disable:
-- **UI:** https://app.all-hands.dev/automations → Toggle "OHTV Workflow Orchestrator"
+- **UI:** https://app.all-hands.dev/automations -> Toggle "OHTV Workflow Orchestrator"
 - **API:** `curl -X PATCH ".../api/automation/v1/c202ca20-60d5-4f5b-9d53-3d7308c1d95b" -d '{"enabled": true}'`
 
 ## Workflow Phases
 
-### Phase 1: Implementation
-Work originates from GitHub issues or existing PRs:
-- A worker picks up a PR that's stuck (needs work, CI failing, etc.)
+### Phase 0: Issue Expansion (Parallel Track)
+Issues are analyzed and expanded before implementation:
+- Expansion worker picks up oldest issue without `ready` label
+- For bugs: reproduces, finds root cause, documents fix approach
+- For enhancements: scopes solution, writes acceptance criteria
+- Adds `ready` label when expansion complete
+- Can run in parallel with PR work
+
+### Phase 1: Prioritization
+Ready issues are prioritized:
+- Orchestrator runs `/assess-priority` inline
+- Evaluates impact, urgency, complexity, dependencies, risk
+- Assigns `priority:critical/high/medium/low` labels
+- Highest priority ready issue gets implemented next
+
+### Phase 2: Implementation
+Work originates from GitHub issues:
+- Implementation worker picks up highest priority ready issue
 - Creates feature branch, implements changes with tests
 - Runs lints, type checks, fixes issues
 - Creates/updates PR, monitors CI until green
@@ -149,15 +237,23 @@ curl -X POST "https://app.all-hands.dev/api/automation/v1/preset/plugin" \
 
 1. **Issue/PR-driven**: No design documents - work comes from GitHub issues and PRs.
 
-2. **Manual testing required**: Every PR must have documented manual test results before review.
+2. **Issue expansion first**: Vague issues are analyzed and expanded with technical detail before implementation.
 
-3. **Fire and forget**: Orchestrator spawns workers but doesn't monitor them. Next wake-up assesses new state.
+3. **Priority-based work**: Ready issues are assessed and labeled with priority to determine order.
 
-4. **One action per wake-up**: Orchestrator does one thing (spawn a worker or decide nothing needed) then exits.
+4. **Manual testing required**: Every PR must have documented manual test results before review.
 
-5. **Workers are focused**: Each worker has a specific job (implement, test, review, merge) and exits when done.
+5. **Fire and forget**: Orchestrator spawns workers but doesn't monitor them. Next wake-up assesses new state.
 
-6. **Reproducible testing**: Test reports are structured so humans can repeat the tests.
+6. **One action per wake-up**: Orchestrator does one thing (spawn a worker or decide nothing needed) then exits.
+
+7. **Workers are focused**: Each worker has a specific job (expand, implement, test, review, merge) and exits when done.
+
+8. **Continuous learning**: Every worker reflects and captures learnings as issue comments before finishing.
+
+9. **Reproducible testing**: Test reports are structured so humans can repeat the tests.
+
+10. **Natural language parsing**: No special formats needed - the agent reads issues, PRs, and reviews naturally.
 
 ## Required Tools Setup
 
