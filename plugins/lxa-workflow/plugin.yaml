@@ -37,19 +37,6 @@ skills:
       - /orchestrate
     description: Main orchestration logic - assess state and dispatch work
 
-  - name: self-review
-    path: skills/self-review.md
-    triggers:
-      - /self-review
-    description: Self-review a draft PR before requesting human review
-
-  - name: respond-to-review
-    path: skills/respond-to-review.md
-    triggers:
-      - /respond-to-review
-      - /address-review
-    description: Address reviewer feedback on a PR
-
   - name: prepare-and-merge
     path: skills/prepare-and-merge.md
     triggers:

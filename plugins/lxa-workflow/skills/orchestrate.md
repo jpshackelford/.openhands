@@ -187,18 +187,38 @@ Title: [Self-Review] PR #{number} - {title}
 Prompt: |
   You are self-reviewing PR #{number} before requesting human review.
 
-  Follow the /self-review skill:
   1. Clone the repo and checkout the PR branch
-  2. Verify CI is passing
+  2. Verify CI is passing: gh pr checks {number}
   3. Review the code against quality principles:
-     - Data structures appropriate?
-     - Logic simple and clear?
-     - No over-engineering?
+     - Data structures appropriate for the problem?
+     - Logic simple and clear? (no deep nesting, no special cases)
+     - No over-engineering? (solve real problems, not theoretical)
      - Tests cover new behavior?
-  4. Fix any issues you find
-  5. Run `make check` after each fix
+  4. Fix any issues you find:
+     - Make the fix
+     - Run `make check`
+     - Commit with clear message
+  5. Push all changes
   6. Mark PR ready for review: gh pr ready {number}
-  7. Post a self-review comment documenting what you checked
+  7. Post a self-review comment:
+
+     ## Self-Review Complete
+
+     **Verdict:** 🟢 Good / 🟡 Acceptable
+
+     ### What I Checked
+     - [x] Data structures are appropriate
+     - [x] Logic is simple and clear
+     - [x] No over-engineering
+     - [x] Tests cover new behavior
+     - [x] All quality checks pass
+
+     ### Issues Found & Fixed
+     - [list any issues fixed]
+
+     ---
+     *Self-review by AI agent (OpenHands)*
+
   8. Exit
 
 Plugins: github:jpshackelford/.openhands/plugins/lxa-workflow@feat/lxa-workflow-plugin
@@ -211,26 +231,36 @@ Use when: PR has unresolved review threads (💬 > 0).
 
 ```
 Repository: jpshackelford/lxa
-Title: [Review Response] PR #{number} - {title}
+Title: [Review Round] PR #{number} - {title}
 Prompt: |
   You are addressing review feedback on PR #{number}.
 
-  Follow the /respond-to-review skill:
   1. Clone the repo and checkout the PR branch
   2. IMMEDIATELY set PR back to draft: gh pr ready {number} --undo
   3. Read ALL review comments and threads carefully
-  4. For each piece of feedback:
-     - Accept and implement (most suggestions improve code)
-     - Reject only if it significantly increases scope
+  4. For each piece of feedback, decide:
+     - Accept and implement (most suggestions improve code quality)
+     - Reject only if it significantly increases scope/complexity
   5. Group related changes into logical commits
   6. For each commit:
      - Make the change
      - Run `make check`
      - Commit with clear message referencing the feedback
-     - Push
+     - Push and verify CI passes
   7. Reply to review threads explaining what you did
   8. Move PR back to ready: gh pr ready {number}
-  9. Post a summary comment listing all changes made
+  9. Post a summary comment:
+
+     ## Review Feedback Addressed
+
+     ### Changes Made
+     | Feedback | Action | Commit |
+     |----------|--------|--------|
+     | [feedback 1] | [what you did] | abc1234 |
+
+     ---
+     *Review response by AI agent (OpenHands)*
+
   10. Exit - next review round is a separate conversation
 
 Plugins: github:jpshackelford/.openhands/plugins/lxa-workflow@feat/lxa-workflow-plugin
@@ -272,18 +302,22 @@ Title: [Merge] PR #{number} - {title}
 Prompt: |
   You are preparing PR #{number} for merge.
 
-  Follow the /prepare-and-merge skill:
   1. Clone the repo and checkout the PR branch
-  2. Verify CI is green and approval is present
-  3. Review the full PR diff
-  4. Update PR description to reflect final state
-  5. Craft a conventional commit message for squash-merge:
-     - feat: / fix: / chore: / refactor: as appropriate
-     - Clear summary line
+  2. Verify CI is green: gh pr checks {number}
+  3. Verify approval is present: gh pr view {number} --json reviewDecision
+  4. Review the full PR diff: gh pr diff {number}
+  5. Update PR description to reflect final state:
+     - What was implemented
+     - Key decisions made during review
+     - Test coverage
+  6. Craft a conventional commit message for squash-merge:
+     - Type: feat: / fix: / chore: / refactor: as appropriate
+     - Clear summary line (50 chars max)
      - Body with relevant details
-  6. Squash and merge: gh pr merge {number} --squash --body "commit message"
-  7. Verify the merge succeeded
-  8. Exit
+  7. Squash and merge:
+     gh pr merge {number} --squash --body "commit message"
+  8. Verify the merge succeeded
+  9. Exit
 
 Plugins: github:jpshackelford/.openhands/plugins/lxa-workflow@feat/lxa-workflow-plugin
 PR Number: {number}

@@ -30,8 +30,6 @@ Install: `uv tool install git+https://github.com/jpshackelford/lxa.git`
 | **orchestrate** | `/orchestrate` | Main entry point - assess state and dispatch work |
 | **spawn-conversation** | `/spawn-conversation` | Start an OpenHands worker conversation |
 | **pr-workflow-status** | `/pr-status` | Get comprehensive PR status |
-| **self-review** | `/self-review` | Self-review a draft PR before human review |
-| **respond-to-review** | `/respond-to-review` | Address reviewer feedback on a PR |
 | **prepare-and-merge** | `/merge` | Final merge preparation and execution |
 | **expand-issue** | `/expand-issue` | Analyze and expand a GitHub issue |
 | **assess-priority** | `/prioritize` | Prioritize ready issues for implementation |
@@ -134,19 +132,19 @@ Evaluates `ready` issues and assigns priority labels:
 
 ## PR Lifecycle
 
-PRs progress through phases managed by worker conversations:
+PRs progress through phases managed by **worker conversations** spawned by the orchestrator:
 
-### Self-Review Phase (`/self-review`)
+### Self-Review Phase
 
-For draft PRs with passing CI, the self-review worker:
+For draft PRs with passing CI, the orchestrator spawns a **self-review worker** that:
 - Reviews the code against quality principles
 - Fixes any issues found
 - Marks the PR ready for human review
 - Posts a self-review comment documenting what was checked
 
-### Review Response Phase (`/respond-to-review`)
+### Review Response Phase
 
-For PRs with unresolved review threads:
+For PRs with unresolved review threads (💬 > 0), the orchestrator spawns a **review response worker** that:
 - Sets PR back to draft
 - Reads all review comments
 - Addresses each piece of feedback
@@ -154,12 +152,14 @@ For PRs with unresolved review threads:
 - Replies to review threads
 - Marks PR ready again
 
-### Merge Phase (`/prepare-and-merge`)
+### Merge Phase
 
-For approved PRs:
+For approved PRs, the orchestrator spawns a **merge worker** that:
 - Verifies all checks pass
 - Crafts a conventional commit message
 - Squash merges the PR
+
+Worker prompts are defined in the `/orchestrate` skill.
 
 ## Parallel Work Model
 
