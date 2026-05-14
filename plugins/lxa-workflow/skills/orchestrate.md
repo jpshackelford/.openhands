@@ -122,48 +122,33 @@ gh pr view 42 --repo jpshackelford/lxa --json reviewDecision,reviews
 
 | Priority | Current State | Action |
 |----------|---------------|--------|
-| 1 | PR exists, CI failing | Wait or spawn **fix worker** |
-| 2 | PR exists, draft, CI green | Run `lxa refine --phase self-review` |
-| 3 | PR ready, CI green, 💬 > 0 | Run `lxa refine --phase respond` |
-| 4 | PR ready, CI green, approved | Spawn **merge worker** or run with `--auto-merge` |
+| 1 | PR exists, CI failing | Wait or spawn **CI fix worker** |
+| 2 | PR exists, draft, CI green | Spawn **self-review worker** |
+| 3 | PR ready, CI green, 💬 > 0 | Spawn **review response worker** |
+| 4 | PR ready, CI green, approved | Spawn **merge worker** |
 | 5 | PR merged | Log completion, move to next PR |
-| 6 | No open PRs, issues exist | Spawn **implementation worker** |
-
-### LXA Refinement Integration
-
-LXA's refinement handles the self-review and review-response cycles automatically:
-
-```bash
-# For draft PRs with passing CI - self-review phase
-lxa refine https://github.com/jpshackelford/lxa/pull/42 --phase self-review
-
-# For PRs with unresolved review threads - respond phase
-lxa refine https://github.com/jpshackelford/lxa/pull/42 --phase respond
-
-# Auto-detect phase and optionally merge when ready
-lxa refine https://github.com/jpshackelford/lxa/pull/42 --auto-merge
-```
+| 6 | No open PRs, ready issues exist | Spawn **implementation worker** |
 
 ### Workflow Sequence
 
 ```
 Implementation → CI Green → Self-Review → Human Review → Respond → Approval → Merge
                               ↑                           ↑
-                        (lxa refine                 (lxa refine
-                         --phase self-review)       --phase respond)
+                        (self-review              (respond-to-review
+                           worker)                     worker)
 ```
 
 ## Avoiding Duplicate Work
 
-Before spawning a worker or running refinement, check if related work is already in progress:
+Before spawning a worker, check if related work is already in progress:
 
 ```bash
-# Check for active lxa background jobs
-lxa job list --running
-
-# If a refinement job is already running for this PR, skip
-lxa job list | grep "refine.*#42" && echo "Already refining PR #42"
+# Check for recent conversations working on this PR
+# Look for conversations with the PR number in the title
+# that have been active in the last hour
 ```
+
+Use the spawn-conversation skill's duplicate detection to avoid parallel work on the same PR.
 
 ## Worker Prompts
 
@@ -192,6 +177,66 @@ Plugins: github:jpshackelford/.openhands/plugins/lxa-workflow@feat/lxa-workflow-
 PR Number: {number}
 ```
 
+### Self-Review Worker
+
+Use when: Draft PR with passing CI, needs self-review before human review.
+
+```
+Repository: jpshackelford/lxa
+Title: [Self-Review] PR #{number} - {title}
+Prompt: |
+  You are self-reviewing PR #{number} before requesting human review.
+
+  Follow the /self-review skill:
+  1. Clone the repo and checkout the PR branch
+  2. Verify CI is passing
+  3. Review the code against quality principles:
+     - Data structures appropriate?
+     - Logic simple and clear?
+     - No over-engineering?
+     - Tests cover new behavior?
+  4. Fix any issues you find
+  5. Run `make check` after each fix
+  6. Mark PR ready for review: gh pr ready {number}
+  7. Post a self-review comment documenting what you checked
+  8. Exit
+
+Plugins: github:jpshackelford/.openhands/plugins/lxa-workflow@feat/lxa-workflow-plugin
+PR Number: {number}
+```
+
+### Review Response Worker
+
+Use when: PR has unresolved review threads (💬 > 0).
+
+```
+Repository: jpshackelford/lxa
+Title: [Review Response] PR #{number} - {title}
+Prompt: |
+  You are addressing review feedback on PR #{number}.
+
+  Follow the /respond-to-review skill:
+  1. Clone the repo and checkout the PR branch
+  2. IMMEDIATELY set PR back to draft: gh pr ready {number} --undo
+  3. Read ALL review comments and threads carefully
+  4. For each piece of feedback:
+     - Accept and implement (most suggestions improve code)
+     - Reject only if it significantly increases scope
+  5. Group related changes into logical commits
+  6. For each commit:
+     - Make the change
+     - Run `make check`
+     - Commit with clear message referencing the feedback
+     - Push
+  7. Reply to review threads explaining what you did
+  8. Move PR back to ready: gh pr ready {number}
+  9. Post a summary comment listing all changes made
+  10. Exit - next review round is a separate conversation
+
+Plugins: github:jpshackelford/.openhands/plugins/lxa-workflow@feat/lxa-workflow-plugin
+PR Number: {number}
+```
+
 ### Implementation Worker
 
 Use when: Ready issue exists but no PR has been created yet.
@@ -211,7 +256,7 @@ Prompt: |
   4. Implement the first milestone
   5. Run `make check` to verify
   6. Open a draft PR linking to the issue
-  7. Exit - refinement will handle the rest
+  7. Exit - self-review worker will handle the next step
 
 Plugins: github:jpshackelford/.openhands/plugins/lxa-workflow@feat/lxa-workflow-plugin
 Issue Number: {issue_number}
@@ -227,6 +272,7 @@ Title: [Merge] PR #{number} - {title}
 Prompt: |
   You are preparing PR #{number} for merge.
 
+  Follow the /prepare-and-merge skill:
   1. Clone the repo and checkout the PR branch
   2. Verify CI is green and approval is present
   3. Review the full PR diff
@@ -258,22 +304,22 @@ After each orchestrator run, append a status update to `WORKLOG.md` in the repo 
   - Review status: 💬2 unresolved threads
 
 **Action Taken:**
-🔄 Running `lxa refine --phase respond`
-- PR has unresolved review threads
+🚀 Spawned review response worker
+- Conversation: https://app.all-hands.dev/conversations/{conv_id}
 
 ---
 ```
 
-### When Running LXA Refinement
+### When Spawning a Self-Review Worker
 
 ```markdown
 ### 2025-05-05 14:00 UTC - Orchestrator
 
-🔄 **Running: LXA Refinement (self-review)**
+🔍 **Spawned: Self-Review Worker**
 
-Refining [PR #42](https://github.com/jpshackelford/lxa/pull/42): Add board management
+Self-reviewing [PR #42](https://github.com/jpshackelford/lxa/pull/42): Add board management
 - CI is green, draft PR ready for self-review
-- Command: `lxa refine https://github.com/jpshackelford/lxa/pull/42 --phase self-review`
+- Conversation: https://app.all-hands.dev/conversations/{conv_id}
 
 ---
 ```
@@ -286,9 +332,9 @@ Refining [PR #42](https://github.com/jpshackelford/lxa/pull/42): Add board manag
 ✅ **All quiet** - No action needed
 
 - [PR #42](https://github.com/jpshackelford/lxa/pull/42): Waiting for review
-  - Refinement: Self-review complete
+  - Self-review: Complete
   - Review: In progress (awaiting reviewer)
-- No active lxa jobs found
+- No active conversations found
 
 ---
 ```

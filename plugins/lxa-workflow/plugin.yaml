@@ -37,12 +37,18 @@ skills:
       - /orchestrate
     description: Main orchestration logic - assess state and dispatch work
 
-  - name: pr-refinement
-    path: skills/pr-refinement.md
+  - name: self-review
+    path: skills/self-review.md
     triggers:
-      - /pr-refinement
-      - /refine
-    description: Two-phase PR refinement - self-review and review response
+      - /self-review
+    description: Self-review a draft PR before requesting human review
+
+  - name: respond-to-review
+    path: skills/respond-to-review.md
+    triggers:
+      - /respond-to-review
+      - /address-review
+    description: Address reviewer feedback on a PR
 
   - name: prepare-and-merge
     path: skills/prepare-and-merge.md
@@ -91,6 +97,3 @@ env:
   - name: GITHUB_TOKEN
     description: GitHub token for gh CLI operations
     required: true
-  - name: LLM_API_KEY
-    description: LLM API key for lxa refinement operations
-    required: false

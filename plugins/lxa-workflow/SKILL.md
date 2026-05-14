@@ -30,7 +30,8 @@ Install: `uv tool install git+https://github.com/jpshackelford/lxa.git`
 | **orchestrate** | `/orchestrate` | Main entry point - assess state and dispatch work |
 | **spawn-conversation** | `/spawn-conversation` | Start an OpenHands worker conversation |
 | **pr-workflow-status** | `/pr-status` | Get comprehensive PR status |
-| **pr-refinement** | `/refine` | Two-phase PR refinement (self-review + respond) |
+| **self-review** | `/self-review` | Self-review a draft PR before human review |
+| **respond-to-review** | `/respond-to-review` | Address reviewer feedback on a PR |
 | **prepare-and-merge** | `/merge` | Final merge preparation and execution |
 | **expand-issue** | `/expand-issue` | Analyze and expand a GitHub issue |
 | **assess-priority** | `/prioritize` | Prioritize ready issues for implementation |
@@ -131,36 +132,34 @@ Evaluates `ready` issues and assigns priority labels:
 | `priority:medium` | Standard priority |
 | `priority:low` | Nice to have |
 
-## PR Lifecycle with LXA Refinement
+## PR Lifecycle
 
-LXA provides automated PR refinement through two phases:
+PRs progress through phases managed by worker conversations:
 
-### Self-Review Phase
+### Self-Review Phase (`/self-review`)
 
-For draft PRs with passing CI:
+For draft PRs with passing CI, the self-review worker:
+- Reviews the code against quality principles
+- Fixes any issues found
+- Marks the PR ready for human review
+- Posts a self-review comment documenting what was checked
 
-```bash
-lxa refine https://github.com/jpshackelford/lxa/pull/42 --phase self-review
-```
-
-The agent reviews its own code, fixes issues, and marks the PR ready for human review.
-
-### Review Response Phase
+### Review Response Phase (`/respond-to-review`)
 
 For PRs with unresolved review threads:
+- Sets PR back to draft
+- Reads all review comments
+- Addresses each piece of feedback
+- Commits fixes with clear messages
+- Replies to review threads
+- Marks PR ready again
 
-```bash
-lxa refine https://github.com/jpshackelford/lxa/pull/42 --phase respond
-```
+### Merge Phase (`/prepare-and-merge`)
 
-The agent addresses each review comment, commits fixes, and marks threads resolved.
-
-### Full Auto-Refinement
-
-```bash
-# Auto-detect phase and run with merge when ready
-lxa refine URL --auto-merge
-```
+For approved PRs:
+- Verifies all checks pass
+- Crafts a conventional commit message
+- Squash merges the PR
 
 ## Parallel Work Model
 
@@ -218,20 +217,18 @@ The orchestrator automatically disables itself when it detects **two consecutive
 Key commands used by this workflow:
 
 ```bash
-# PR Refinement
-lxa refine <PR_URL>                    # Auto-detect phase
-lxa refine <PR_URL> --phase self-review   # Self-review only
-lxa refine <PR_URL> --phase respond       # Respond to reviews
-lxa refine <PR_URL> --auto-merge          # Merge when ready
+# PR Status
+lxa pr list "owner/repo#42" --title    # Get PR status with history codes
 
 # Board Management (optional)
 lxa board status --attention           # What needs attention
 lxa board sync                         # Sync with GitHub state
 
-# Job Management
-lxa job list                           # List background jobs
-lxa job status <job_id>                # Job details
-lxa job logs <job_id> --follow         # Stream logs
+# Development
+make check                             # Run all quality checks
+make lint                              # Run linter
+make typecheck                         # Run type checker
+make test                              # Run tests
 ```
 
 ## Setting Up the Automation
@@ -271,4 +268,3 @@ This runs the orchestrator every 30 minutes (at :15 and :45 past each hour).
 |----------|----------|-------------|
 | `OH_API_KEY` | Yes | OpenHands API key for spawning conversations |
 | `GITHUB_TOKEN` | Yes | GitHub token for gh CLI operations |
-| `LLM_API_KEY` | No | LLM API key for lxa refinement (uses default if not set) |
