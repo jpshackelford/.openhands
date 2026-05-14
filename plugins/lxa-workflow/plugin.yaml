@@ -1,0 +1,96 @@
+name: lxa-workflow
+version: 0.1.0
+description: |
+  Automated PR workflow for the lxa project with issue expansion,
+  prioritization, and parallel work support.
+
+  Provides skills for:
+  - Issue expansion and technical analysis
+  - Priority assessment for ready issues
+  - Spawning worker conversations via OH API
+  - Checking PR/CI/review status
+  - PR refinement (self-review and review response)
+  - Worklog housekeeping and archival
+  - Orchestrating the full issue-to-merge cycle
+
+author: jpshackelford
+repository: https://github.com/jpshackelford/.openhands
+
+# Skills provided by this plugin
+skills:
+  - name: spawn-conversation
+    path: skills/spawn-conversation.md
+    triggers:
+      - /spawn-conversation
+    description: Start a new OpenHands conversation and verify it's running
+
+  - name: pr-workflow-status
+    path: skills/pr-workflow-status.md
+    triggers:
+      - /pr-workflow-status
+      - /pr-status
+    description: Get comprehensive PR status for workflow decisions
+
+  - name: orchestrate
+    path: skills/orchestrate.md
+    triggers:
+      - /orchestrate
+    description: Main orchestration logic - assess state and dispatch work
+
+  - name: pr-refinement
+    path: skills/pr-refinement.md
+    triggers:
+      - /pr-refinement
+      - /refine
+    description: Two-phase PR refinement - self-review and review response
+
+  - name: prepare-and-merge
+    path: skills/prepare-and-merge.md
+    triggers:
+      - /prepare-merge
+      - /merge
+    description: Final merge preparation and execution
+
+  - name: expand-issue
+    path: skills/expand-issue.md
+    triggers:
+      - /expand-issue
+    description: Analyze and expand a GitHub issue with technical detail
+
+  - name: assess-priority
+    path: skills/assess-priority.md
+    triggers:
+      - /assess-priority
+      - /prioritize
+    description: Assess and prioritize ready issues for implementation
+
+  - name: truncate-worklog
+    path: skills/truncate-worklog.md
+    triggers:
+      - /truncate-worklog
+    description: Archive old worklog entries while preserving recent productive work context
+
+  - name: update-project-plan
+    path: skills/update-project-plan.md
+    triggers:
+      - /update-plan
+      - /reflect
+    description: Reflect on learnings and update issue comments with notes
+
+  - name: disable-automation
+    path: skills/disable-automation.md
+    triggers:
+      - /disable-automation
+    description: Auto-disable on consecutive quiet periods
+
+# Environment variables this plugin expects
+env:
+  - name: OH_API_KEY
+    description: OpenHands API key for spawning conversations
+    required: true
+  - name: GITHUB_TOKEN
+    description: GitHub token for gh CLI operations
+    required: true
+  - name: LLM_API_KEY
+    description: LLM API key for lxa refinement operations
+    required: false
