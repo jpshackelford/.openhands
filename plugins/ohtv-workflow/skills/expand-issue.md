@@ -261,3 +261,6 @@ Before exiting, update WORKLOG.md on main:
 | `needs-split` | Issue too large, should be broken into smaller issues |
 | `bug` | Confirmed bug (if not already labeled) |
 | `enhancement` | Confirmed enhancement (if not already labeled) |
+| `hold` | DO NOT APPLY - only humans set this to pause implementation |
+
+**Important:** If an issue has the `hold` label, do NOT expand it. Skip it and move to the next issue.

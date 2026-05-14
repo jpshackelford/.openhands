@@ -113,6 +113,7 @@ New Issue -> Expansion -> Ready -> Prioritized -> Implementation -> PR -> Review
 | `needs-info` | Cannot proceed without more info from reporter |
 | `needs-split` | Issue too large, should be broken into smaller issues |
 | `blocked` | Blocked by external factors |
+| `hold` | Issue should not be implemented yet (human decision) |
 | `priority:critical` | Blocking/urgent - do immediately |
 | `priority:high` | Important - do soon |
 | `priority:medium` | Standard priority |

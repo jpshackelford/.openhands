@@ -187,6 +187,13 @@ If an issue is blocked by external factors:
 - Add comment explaining what it's blocked on
 - Skip in priority assessment until unblocked
 
+### Hold Issues
+
+Issues with the `hold` label should NOT be implemented:
+- Human has explicitly put the issue on hold
+- Skip in priority assessment entirely
+- Do not remove the `hold` label - only humans should do that
+
 ## Output Format
 
 The skill should output a structured recommendation:
