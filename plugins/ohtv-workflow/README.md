@@ -19,15 +19,21 @@ flowchart LR
 
     subgraph Workers["Workers (separate conversations)"]
         direction TB
-        exp["📋 Expansion"]
-        imp["🔧 Implementation"]
-        doc["📝 Documentation"]
-        tst["🧪 Testing"]
-        rev["👀 Review"]
-        mrg["✅ Merge"]
+        subgraph IssueWorkers["Issue Workers"]
+            exp["📋 Expansion"]
+            pri["🏷️ Prioritization"]
+        end
+        subgraph PRWorkers["PR Workers"]
+            imp["🔧 Implementation"]
+            doc["📝 Documentation"]
+            tst["🧪 Testing"]
+            rev["👀 Review"]
+            mrg["✅ Merge"]
+        end
     end
 
     spawn -.->|"issue needs detail"| exp
+    spawn -.->|"issue needs priority"| pri
     spawn -.->|"ready issue"| imp
     spawn -.->|"PR needs docs"| doc
     spawn -.->|"PR needs testing"| tst
