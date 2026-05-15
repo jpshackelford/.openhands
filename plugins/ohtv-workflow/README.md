@@ -6,59 +6,37 @@ Automated PR workflow orchestration for the [ohtv](https://github.com/jpshackelf
 
 ```mermaid
 flowchart LR
-    subgraph Orchestrator["🎯 Orchestrator (every 30 min)"]
+    subgraph Orch["🎯 Orchestrator"]
         direction TB
-        wake["Wake Up"] --> check["Check Workers"]
-        check --> decide["Decide Action"]
-        decide --> spawn["Spawn Worker"]
-        spawn --> log["Update WORKLOG"]
-        log --> sleep["Exit"]
+        wake["Wake Up"]
+        check["Check State"]
+        decide["Decide"]
+        spawn["Spawn"]
+        log["Log & Exit"]
+        wake --> check --> decide --> spawn --> log
     end
 
-    subgraph Work["Work Pipeline"]
+    subgraph Workers["Workers (separate conversations)"]
         direction TB
-        
-        subgraph Issues["GitHub Issues"]
-            new["New Issue"]
-            ready["Ready Issue"]
-        end
-
-        subgraph Slots["Worker Slots"]
-            expand["📋 Expansion"]
-            impl["🔧 Implementation"]
-            docs["📝 Docs"]
-            test["🧪 Testing"]
-            review["👀 Review"]
-            merge["✅ Merge"]
-        end
-
-        subgraph PR["GitHub PR"]
-            pr["Pull Request"]
-            main["Merged"]
-        end
+        exp["📋 Expansion"]
+        imp["🔧 Implementation"]
+        doc["📝 Documentation"]
+        tst["🧪 Testing"]
+        rev["👀 Review"]
+        mrg["✅ Merge"]
     end
 
-    %% Issue flow
-    new -->|"oldest first"| expand
-    expand -->|"'ready' label"| ready
-    ready -->|"highest priority"| impl
-    
-    %% PR flow
-    impl --> pr
-    pr --> docs --> test --> review
-    review -->|"changes"| impl
-    review -->|"approved"| merge
-    merge --> main
-    main -.->|"closes"| new
+    decide -.->|"issue needs detail"| exp
+    decide -.->|"ready issue"| imp
+    decide -.->|"PR needs docs"| doc
+    decide -.->|"PR needs testing"| tst
+    decide -.->|"PR has feedback"| rev
+    decide -.->|"PR approved"| mrg
 
-    %% Orchestrator dispatches
-    decide -.-> expand
-    decide -.-> impl
-    decide -.-> docs
-    decide -.-> test
-    decide -.-> review
-    decide -.-> merge
+    log -.->|"next cron"| wake
 ```
+
+The orchestrator wakes every 30 minutes, checks GitHub state, and spawns the appropriate worker. Each worker runs in its own OpenHands conversation and exits when done.
 
 ## How It Works
 
