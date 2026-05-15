@@ -83,36 +83,29 @@ Two workers can run simultaneously in separate slots:
 ### Issue Lifecycle
 
 ```mermaid
-stateDiagram-v2
-    [*] --> New: Issue Created
-    New --> Expanding: Expansion Worker
-    Expanding --> Ready: Adds 'ready' label
-    Ready --> Prioritized: /assess-priority
-    Prioritized --> InProgress: Implementation Worker
-    InProgress --> [*]: PR Merged & Issue Closed
-
-    note right of New: No 'ready' label
-    note right of Ready: Has technical detail
-    note right of Prioritized: Has priority:* label
+flowchart LR
+    A((New)) -->|"Expansion Worker"| B[Expanding]
+    B -->|"adds 'ready' label"| C[Ready]
+    C -->|"/assess-priority"| D[Prioritized]
+    D -->|"Implementation Worker"| E[In Progress]
+    E -->|"PR Merged"| F((Closed))
 ```
+
+> **Labels:** New issues have no `ready` label → Ready issues have technical detail → Prioritized issues have `priority:high/medium/low` labels
 
 ### PR Lifecycle
 
 ```mermaid
-stateDiagram-v2
-    direction LR
-    [*] --> Draft: Implementation
-    Draft --> Ready: CI Green
-    Ready --> DocsUpdate: Docs Worker
-    DocsUpdate --> Testing: Test Worker
-    Testing --> Review: Review Bot
-    Review --> Testing: Significant Changes
-    Review --> Merged: Approved
-    Merged --> [*]
-
-    note right of DocsUpdate: README updated BEFORE testing
-    note right of Testing: Testers verify documented behavior
+flowchart LR
+    A[Draft PR] -->|"CI Green"| B[Ready]
+    B -->|"Docs Worker"| C[Docs Updated]
+    C -->|"Test Worker"| D[Tested]
+    D -->|"Review Bot"| E{Review}
+    E -->|"changes requested"| A
+    E -->|"approved"| F((Merged))
 ```
+
+> **Key:** Documentation is updated *before* testing, so testers verify the documented behavior matches reality.
 
 ## Key Principles
 
