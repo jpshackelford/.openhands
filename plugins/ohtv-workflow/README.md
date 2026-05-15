@@ -17,28 +17,28 @@ flowchart LR
         log -.->|"next cron"| wake
     end
 
-    subgraph Workers["Workers (separate conversations)"]
+    subgraph IssueWorkers["📋 Issue Workers"]
         direction TB
-        subgraph IssueWorkers["Issue Workers"]
-            exp["📋 Expansion"]
-            pri["🏷️ Prioritization"]
-        end
-        subgraph PRWorkers["PR Workers"]
-            imp["🔧 Implementation"]
-            doc["📝 Documentation"]
-            tst["🧪 Testing"]
-            rev["👀 Review"]
-            mrg["✅ Merge"]
-        end
+        exp["Expansion"]
+        pri["Prioritization"]
     end
 
-    spawn -.->|"issue needs detail"| exp
-    spawn -.->|"issue needs priority"| pri
+    subgraph PRWorkers["🔧 PR Workers"]
+        direction TB
+        imp["Implementation"]
+        doc["Documentation"]
+        tst["Testing"]
+        rev["Review"]
+        mrg["Merge"]
+    end
+
+    spawn -.->|"needs detail"| exp
+    spawn -.->|"needs priority"| pri
     spawn -.->|"ready issue"| imp
-    spawn -.->|"PR needs docs"| doc
-    spawn -.->|"PR needs testing"| tst
-    spawn -.->|"PR has feedback"| rev
-    spawn -.->|"PR approved"| mrg
+    spawn -.->|"needs docs"| doc
+    spawn -.->|"needs testing"| tst
+    spawn -.->|"has feedback"| rev
+    spawn -.->|"approved"| mrg
 ```
 
 The orchestrator wakes every 30 minutes, checks GitHub state, and spawns the appropriate worker. Each worker runs in its own OpenHands conversation and exits when done.
