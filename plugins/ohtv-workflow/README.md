@@ -5,60 +5,59 @@ Automated PR workflow orchestration for the [ohtv](https://github.com/jpshackelf
 ## The Circle of Work
 
 ```mermaid
-flowchart TB
-    subgraph Orchestrator["🎯 Orchestrator (runs every 30 min)"]
+flowchart LR
+    subgraph Orchestrator["🎯 Orchestrator (every 30 min)"]
         direction TB
-        wake["Wake Up"]
-        check["Check Active Workers"]
-        decide["Decide Next Action"]
-        spawn["Spawn Worker(s)"]
-        log["Update WORKLOG.md"]
-        sleep["Exit & Sleep"]
+        wake["Wake Up"] --> check["Check Workers"]
+        check --> decide["Decide Action"]
+        decide --> spawn["Spawn Worker"]
+        spawn --> log["Update WORKLOG"]
+        log --> sleep["Exit"]
+    end
+
+    subgraph Work["Work Pipeline"]
+        direction TB
         
-        wake --> check --> decide --> spawn --> log --> sleep
+        subgraph Issues["GitHub Issues"]
+            new["New Issue"]
+            ready["Ready Issue"]
+        end
+
+        subgraph Slots["Worker Slots"]
+            expand["📋 Expansion"]
+            impl["🔧 Implementation"]
+            docs["📝 Docs"]
+            test["🧪 Testing"]
+            review["👀 Review"]
+            merge["✅ Merge"]
+        end
+
+        subgraph PR["GitHub PR"]
+            pr["Pull Request"]
+            main["Merged"]
+        end
     end
 
-    subgraph ExpansionSlot["📋 Expansion Slot"]
-        expand["Expansion Worker"]
-    end
-
-    subgraph PRSlot["🔧 PR Slot (serialized)"]
-        impl["Implementation"]
-        docs["Documentation"]
-        test["Manual Testing"]
-        review["Code Review"]
-        merge["Merge"]
-        
-        impl --> docs --> test --> review
-        review -->|"changes requested"| impl
-        review -->|"approved"| merge
-    end
-
-    subgraph Issues["GitHub Issues"]
-        new["New Issue"]
-        ready["Ready Issue<br/>(expanded + prioritized)"]
-    end
-
-    subgraph PRState["GitHub PR"]
-        pr["Pull Request"]
-        main["✅ Merged to Main"]
-    end
-
-    %% Flow connections
+    %% Issue flow
     new -->|"oldest first"| expand
-    expand -->|"adds 'ready' label"| ready
+    expand -->|"'ready' label"| ready
     ready -->|"highest priority"| impl
-    impl -->|"creates/updates"| pr
+    
+    %% PR flow
+    impl --> pr
+    pr --> docs --> test --> review
+    review -->|"changes"| impl
+    review -->|"approved"| merge
     merge --> main
-    main -->|"closes issue"| new
+    main -.->|"closes"| new
 
-    %% Orchestrator dispatches workers
-    decide -.->|"if slot free"| expand
-    decide -.->|"if slot free"| impl
-    decide -.->|"PR needs docs"| docs
-    decide -.->|"PR needs testing"| test
-    decide -.->|"PR has feedback"| review
-    decide -.->|"PR approved"| merge
+    %% Orchestrator dispatches
+    decide -.-> expand
+    decide -.-> impl
+    decide -.-> docs
+    decide -.-> test
+    decide -.-> review
+    decide -.-> merge
 ```
 
 ## How It Works
