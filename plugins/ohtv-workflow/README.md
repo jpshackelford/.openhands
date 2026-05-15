@@ -30,6 +30,9 @@ flowchart TB
         end
     end
 
+    wake ~~~ exp
+    exp ~~~ imp
+    
     spawn -.->|"needs detail"| exp
     spawn -.->|"needs priority"| pri
     spawn -.->|"ready issue"| imp
@@ -37,8 +40,6 @@ flowchart TB
     spawn -.->|"needs testing"| tst
     spawn -.->|"has feedback"| rev
     spawn -.->|"approved"| mrg
-    
-    exp ~~~ imp
 ```
 
 The orchestrator wakes every 30 minutes, checks GitHub state, and spawns the appropriate worker. Each worker runs in its own OpenHands conversation and exits when done.
