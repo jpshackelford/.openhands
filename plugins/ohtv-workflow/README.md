@@ -5,26 +5,26 @@ Automated PR workflow orchestration for the [ohtv](https://github.com/jpshackelf
 ## The Circle of Work
 
 ```mermaid
-block-beta
-    columns 3
-    
-    block:Orch["🎯 Orchestrator (cron every 30 min)"]:1
-        columns 1
+flowchart LR
+    subgraph Orch["🎯 Orchestrator"]
+        direction TB
         wake["Wake"]
         check["Check State"]
         decide["Decide"]
         spawn["Spawn"]
         log["Log & Exit"]
+        wake --> check --> decide --> spawn --> log
+        log -.->|"cron"| wake
     end
-    
-    block:IssueWorkers["📋 Issue Workers"]:1
-        columns 1
+
+    subgraph IssueWorkers["📋 Issue Workers"]
+        direction TB
         exp["Expansion"]
         pri["Prioritization"]
     end
-    
-    block:PRWorkers["🔧 PR Workers"]:1
-        columns 1
+
+    subgraph PRWorkers["🔧 PR Workers"]
+        direction TB
         imp["Implementation"]
         doc["Documentation"]
         tst["Testing"]
@@ -32,13 +32,15 @@ block-beta
         mrg["Merge"]
     end
 
-    spawn --"needs detail"--> exp
-    spawn --"needs priority"--> pri
-    spawn --"ready issue"--> imp
-    spawn --"needs docs"--> doc
-    spawn --"needs testing"--> tst
-    spawn --"has feedback"--> rev
-    spawn --"approved"--> mrg
+    Orch --> IssueWorkers --> PRWorkers
+    
+    spawn -.-> exp
+    spawn -.-> pri
+    spawn -.-> imp
+    spawn -.-> doc
+    spawn -.-> tst
+    spawn -.-> rev
+    spawn -.-> mrg
 ```
 
 The orchestrator wakes every 30 minutes, checks GitHub state, and spawns the appropriate worker. Each worker runs in its own OpenHands conversation and exits when done.
