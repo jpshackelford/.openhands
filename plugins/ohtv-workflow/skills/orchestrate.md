@@ -5,11 +5,14 @@ triggers:
   - /orchestrate
 ---
 
-# Orchestrate PR Workflow
+# Orchestrate Workflow
 
-Main orchestration logic for the ohtv PR workflow. This skill is designed to run as a scheduled automation that wakes up periodically to assess state and dispatch work.
+Main orchestration logic for the ohtv workflow. This skill is designed to run as a scheduled automation that wakes up periodically to assess state and dispatch work.
 
-Unlike design-document-driven projects, ohtv uses **GitHub issues and PRs exclusively** as the source of truth. The orchestrator picks up existing PRs and advances them through completion.
+Unlike design-document-driven projects, ohtv uses **GitHub issues and PRs exclusively** as the source of truth. Issues go through two phases:
+
+1. **Expansion Phase** - Issues are analyzed, expanded with technical detail, and labeled `ready`
+2. **Implementation Phase** - Ready issues are prioritized and implemented one at a time
 
 ## Usage
 
@@ -20,12 +23,35 @@ Unlike design-document-driven projects, ohtv uses **GitHub issues and PRs exclus
 This skill runs automatically via cron automation. It:
 1. **CHECK FOR HUMAN INSTRUCTIONS FIRST** - Read WORKLOG.md for any `## INSTRUCTION:` entries
 2. If human instructions exist, follow them before doing anything else
-3. Discovers any open PRs for the repo
-4. Checks PR status (CI, reviews, manual testing)
-5. Decides what action is needed based on current state
-6. Spawns a worker conversation if work is available
-7. Appends status update to WORKLOG.md on main
-8. Exits (next check happens on next cron trigger)
+3. **CHECK FOR ACTIVE WORKERS** - Parse WORKLOG.md for running conversations
+4. Discovers any open PRs for the repo (there should be 0 or 1 at a time)
+5. Lists open GitHub issues by label (`ready` vs needs expansion)
+6. Decides what action is needed based on current state
+7. Spawns worker conversation(s) if work is available
+8. Appends status update to WORKLOG.md on main
+9. Exits (next check happens on next cron trigger)
+
+## Parallel Work Model
+
+The orchestrator can run **two workers simultaneously**:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  PARALLEL WORK SLOTS                                             │
+├─────────────────────────────────────────────────────────────────┤
+│  SLOT 1: Expansion Worker (0 or 1 active)                       │
+│    - Analyzes issues, finds root cause, adds technical detail   │
+│    - Only touches issues (labels, comments) - no code changes   │
+│                                                                   │
+│  SLOT 2: PR Worker (0 or 1 active)                              │
+│    - Implementation, Testing, Review, or Merge worker            │
+│    - Touches code, branches, PRs - must be serialized           │
+│                                                                   │
+│  ✅ Both slots can be filled simultaneously                      │
+│  ❌ Cannot have 2 expansion workers                              │
+│  ❌ Cannot have 2 PR workers                                     │
+└─────────────────────────────────────────────────────────────────┘
+```
 
 ## Workflow Overview
 
@@ -33,14 +59,19 @@ This skill runs automatically via cron automation. It:
 ┌──────────────────────────────────────────────────────────────────┐
 │  ORCHESTRATOR WAKE-UP                                            │
 ├──────────────────────────────────────────────────────────────────┤
+│  0. SETUP: Install tools (lxa, ohtv)                            │
+│  0.5. HOUSEKEEPING: Truncate worklog if large (>300 lines)      │
 │  1. READ WORKLOG.md for human instructions (FIRST!)             │
 │  2. If human instructions found → follow them, then exit        │
-│  3. Check PR status with lxa pr list + gh (visibility)          │
-│  4. Check PR comments for manual test results                    │
-│  5. Decide: Is there work to dispatch?                           │
-│  6. If yes: spawn worker conversation via OH API                 │
-│  7. Append status update to WORKLOG.md (on main!)               │
-│  8. Exit                                                         │
+│  3. PARSE WORKLOG.md for active workers (by conv ID)            │
+│  4. CHECK which workers are still running (API query)           │
+│  5. GATHER STATE:                                                │
+│     - Open PRs (lxa pr list)                                    │
+│     - Issues by label: ready, hold, priority:*                  │
+│  6. DECIDE what to spawn (see Decision Tree)                    │
+│  7. SPAWN worker(s) if slots available and work exists          │
+│  8. UPDATE WORKLOG.md with current state                        │
+│  9. EXIT                                                         │
 └──────────────────────────────────────────────────────────────────┘
 ```
 
@@ -59,6 +90,33 @@ lxa repo add jpshackelford/ohtv 2>/dev/null || true
 # Sync recent ohtv data
 ohtv sync --since $(date -u -d '4 hours ago' +%Y-%m-%dT%H:%M:%S) --quiet
 ```
+
+## Step 0.5: Housekeeping - Truncate Worklog
+
+If the worklog is getting large, archive old entries to keep the file manageable and ensure agents have focused context on recent productive work.
+
+```bash
+# Only run truncation if WORKLOG.md is large (>300 lines)
+WORKLOG_LINES=$(wc -l < WORKLOG.md 2>/dev/null || echo 0)
+if [ "$WORKLOG_LINES" -gt 300 ]; then
+  echo "📦 WORKLOG.md has $WORKLOG_LINES lines - running truncation"
+  # Use /truncate-worklog skill for implementation
+fi
+```
+
+See [Truncate Worklog Skill](truncate-worklog.md) for complete implementation.
+
+### What Gets Archived
+
+- Entries older than 6 hours of productive work
+- Status-check entries ("All quiet", "Waiting")
+- Old spawn/completion entries
+
+### What's Preserved
+
+- Recent 6 hours of productive entries (spawns, completions, merges)
+- Active worker table (always current)
+- Human instructions (until acknowledged)
 
 ## Step 1: Check for Human Instructions
 
@@ -92,43 +150,163 @@ Look for `## INSTRUCTION:` entries that contain actionable requests:
 
 Proceed with normal workflow (Step 2 onwards).
 
-## Gather State
+## Step 2: Check for Active Workers
 
-Use `gh` to discover open PRs, `lxa` for quick status:
+Parse WORKLOG.md to find recently spawned workers, then verify if they're still running.
+
+### Extract Worker Info from WORKLOG.md
+
+Look for recent spawn entries with conversation IDs:
 
 ```bash
-# 1. Discover open PRs
+# Get last 100 lines, find spawn entries with conv IDs
+# Format in WORKLOG: | `abc1234` | expansion | Issue #9 - Title | timestamp |
+grep -E "^\| \`[a-f0-9]{7}\` \|" WORKLOG.md | tail -10
+```
+
+Or look for the "Active Workers" table format:
+
+```bash
+# Extract conv IDs and types from recent entries
+grep -A10 "Active Workers:" WORKLOG.md | tail -15
+```
+
+### Check if Conversations are Still Running
+
+For each conversation ID found, query the API:
+
+```bash
+# Check conversation status by ID prefix
+conv_id="abc1234"
+curl -s "https://app.all-hands.dev/api/v1/app-conversations/search?limit=50" \
+  -H "Authorization: Bearer ${OH_API_KEY}" \
+| jq -r ".items[] | select(.id | startswith(\"$conv_id\")) | {id: .id[0:7], status: .execution_status, title: .title}"
+```
+
+**Status values:**
+- `running` = worker is active, don't spawn duplicate
+- `finished` = worker completed
+- `error` / `stuck` = worker failed (may need attention)
+
+### Determine Available Slots
+
+```bash
+# Pseudo-code for slot availability
+ACTIVE_EXPANSION=false
+ACTIVE_PR_WORKER=false
+
+for each spawned_worker in WORKLOG.md (last 4 hours):
+    status = query_api(worker.conv_id)
+    if status == "running":
+        if worker.type == "expansion":
+            ACTIVE_EXPANSION=true
+        else:  # implementation, testing, review, merge
+            ACTIVE_PR_WORKER=true
+
+CAN_SPAWN_EXPANSION = !ACTIVE_EXPANSION
+CAN_SPAWN_PR_WORKER = !ACTIVE_PR_WORKER
+```
+
+## Gather State
+
+Use `gh` to discover open PRs and issues, `lxa` for quick status:
+
+```bash
+# 1. Discover open PRs (usually 0 or 1)
 gh pr list --repo jpshackelford/ohtv --state open --json number,title,isDraft
 # Output: [{"number": 42, "title": "Add --repair option", "isDraft": false}]
 
-# 2. For each PR, get quick status with lxa
+# 2. If a PR exists, get quick status with lxa
 lxa pr list "jpshackelford/ohtv#42"
 # Output: oCR green ready 2
 # History codes: o=opened, C=changes requested, F=fixes pushed, A=approved, m=merged
 
 # 3. Check for manual test results in PR comments
 gh pr view 42 --repo jpshackelford/ohtv --comments | grep -i "Manual Test Results"
+
+# 4. List issues needing expansion (no 'ready' label, no 'hold' label)
+gh issue list --repo jpshackelford/ohtv --state open --json number,title,labels \
+  --jq '[.[] | select(.labels | map(.name) | (contains(["ready"]) or contains(["hold"])) | not)] | sort_by(.number)'
+# Issues without 'ready' or 'hold' label need expansion
+
+# 5. List ready issues (have 'ready' label, no 'hold' label)
+gh issue list --repo jpshackelford/ohtv --state open --label "ready" --json number,title,labels \
+  --jq '[.[] | select(.labels | map(.name) | contains(["hold"]) | not)] | sort_by(.number)'
+
+# 6. Check for prioritized ready issues
+gh issue list --repo jpshackelford/ohtv --state open --label "ready" --json number,title,labels \
+  --jq '[.[] | select(.labels | map(.name) | any(startswith("priority:")))]'
 ```
+
+### Issue Categories
+
+| Category | Labels | Action |
+|----------|--------|--------|
+| Needs expansion | No `ready`, no `hold` | Spawn expansion worker |
+| Ready, not prioritized | `ready`, no `priority:*` | Run `/assess-priority` inline |
+| Ready, prioritized | `ready` + `priority:*` | Spawn implementation worker |
+| On hold | `hold` | Skip (wait for human to remove hold) |
+| Blocked | `blocked`, `needs-info`, `needs-split` | Skip (needs human attention) |
 
 ## Decision Tree
 
-The ohtv workflow ensures **documentation is updated before testing** (so we test what's documented), and both docs and tests are spot-checked before merge if significant changes occurred.
+The ohtv workflow uses **two parallel slots** and ensures **documentation is updated before testing** (so we test what's documented).
 
-### Priority Order (evaluate top to bottom)
+### Expansion Slot (can run parallel to PR work)
 
-| Priority | Current State | Action |
-|----------|---------------|--------|
-| 1 | PR exists, CI failing | Wait or spawn **fix worker** (CI must be green first) |
-| 2 | PR exists, draft | Wait (implementation in progress) |
-| 3 | PR ready, CI green, **README not updated** | Spawn **docs worker** |
-| 4 | PR ready, CI green, docs updated, **no manual test results** | Spawn **testing worker** |
-| 5 | PR ready, CI green, **test results outdated** | Spawn **re-testing worker** |
-| 6 | PR ready, CI green, test results valid, 💬 > 0 | Spawn **review worker** |
-| 7 | PR ready, test results valid, good/acceptable rating, **docs outdated** | Spawn **docs spot-check worker** |
-| 8 | PR ready, test results valid, good/acceptable rating, docs valid | Spawn **merge worker** |
-| 9 | PR merged | Log completion, move to next PR |
+| Condition | Action |
+|-----------|--------|
+| `CAN_SPAWN_EXPANSION` + issues need expansion (no `ready`, no `hold`) | Spawn **expansion worker** for oldest unexpanded issue |
+| `CAN_SPAWN_EXPANSION` + no issues need expansion | Slot idle (all issues expanded or on hold) |
+| `!CAN_SPAWN_EXPANSION` | Wait (expansion worker running) |
 
-### Workflow Sequence
+### PR Slot (Implementation → Docs → Testing → Review → Merge)
+
+| Condition | Action |
+|-----------|--------|
+| `!CAN_SPAWN_PR_WORKER` | Wait (PR worker running) |
+| PR exists, draft, CI failing | Wait (impl worker may still be active) |
+| PR exists, draft, CI green | Wait (impl worker finishing up) |
+| PR exists, ready, CI green, **README not updated** | Spawn **docs worker** |
+| PR exists, ready, CI green, docs updated, **no manual test results** | Spawn **testing worker** |
+| PR exists, ready, CI green, **test results outdated** | Spawn **re-testing worker** |
+| PR exists, ready, CI green, test results valid, 💬 > 0 | Spawn **review worker** |
+| PR exists, ready, test results valid, good rating, **docs outdated** | Spawn **docs spot-check worker** |
+| PR exists, ready, test results valid, good rating, docs valid | Spawn **merge worker** |
+| No open PR + ready issues with priority | Spawn **impl worker** for highest priority ready issue |
+| No open PR + ready issues, no priority | Run `/assess-priority` inline, then spawn impl worker |
+| No open PR + no ready issues | Nothing to implement (wait for expansion) |
+
+### Combined Decision Flow
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  DECISION FLOW                                                   │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  1. CHECK EXPANSION SLOT                                         │
+│     ├─ Active expansion worker? → Skip to PR slot               │
+│     └─ Issues need expansion (no ready, no hold)?               │
+│         ├─ YES → Spawn expansion worker (oldest issue)          │
+│         └─ NO  → Expansion slot idle                            │
+│                                                                  │
+│  2. CHECK PR SLOT                                                │
+│     ├─ Active PR worker? → Log status, exit                     │
+│     └─ Open PR exists?                                          │
+│         ├─ YES → Handle PR state (docs/test/review/merge)       │
+│         └─ NO  → Ready issues exist?                            │
+│                   ├─ YES → Prioritized?                         │
+│                   │         ├─ YES → Spawn impl (highest prio)  │
+│                   │         └─ NO  → /assess-priority, spawn    │
+│                   └─ NO  → Nothing to implement                 │
+│                                                                  │
+│  3. LOG STATUS TO WORKLOG.md                                    │
+│                                                                  │
+│  4. EXIT                                                        │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Workflow Sequence (PR Slot)
 
 ```
 Implementation → CI Green → DOCS UPDATE → Manual Testing → Review → [Re-test?] → [Docs spot-check?] → Merge
@@ -265,7 +443,104 @@ ohtv list --repo ohtv --since 4h --idle 15
 
 ## Worker Prompts
 
+Use `/spawn-conversation` skill to start worker conversations.
+
+### Expansion Worker
+
+**Worker Type:** `expansion`
+**Slot:** Expansion slot (can run parallel to PR workers)
+
+Use when: Issues exist that need technical detail before implementation.
+
+```
+Repository: jpshackelford/ohtv
+Title: [Expansion] Issue #{issue_number} - {issue_title}
+Prompt: |
+  You are expanding GitHub Issue #{issue_number} for the ohtv project.
+
+  **ISSUE TO EXPAND:**
+  - Issue: #{issue_number} - {issue_title}
+  - URL: https://github.com/jpshackelford/ohtv/issues/{issue_number}
+
+  Your job is to analyze this issue and add technical detail so it's ready for implementation.
+
+  **FOR BUG REPORTS:**
+  1. Clone the repo and set up the environment
+  2. Attempt to reproduce the bug
+  3. If reproducible, investigate code to find root cause
+  4. Rewrite issue body with: Problem, Steps to Reproduce, Expected/Actual behavior
+  5. Add comment with: Root Cause Analysis, Proposed Fix, Files to modify
+
+  **FOR ENHANCEMENTS:**
+  1. Understand the user need / pain point
+  2. Explore codebase to understand current architecture
+  3. Rewrite issue body with: Problem Statement, Proposed Solution, Acceptance Criteria
+  4. Add comment with: Technical Approach, Implementation Plan, Files affected
+
+  **WHEN DONE:**
+  1. Add `ready` label: gh issue edit {issue_number} --add-label ready
+  2. Update WORKLOG.md on main with completion status
+  3. Exit
+
+  **IF BLOCKED:**
+  - Can't reproduce bug → Add `needs-info` label, comment with questions
+  - Too vague → Add `needs-info` label, ask for clarification
+  - Should be split → Add `needs-split` label, suggest breakdown
+  - Do NOT add `ready` label if blocked
+
+  See /expand-issue skill for detailed guidance.
+
+Plugins: github:jpshackelford/.openhands/plugins/ohtv-workflow@feat/ohtv-workflow-plugin
+Issue Number: {issue_number}
+Worker Type: expansion
+```
+
+### Implementation Worker
+
+**Worker Type:** `implementation`
+**Slot:** PR slot (serialized with testing/review/merge)
+
+Use when: Ready issues exist with priority labels and no open PR.
+
+```
+Repository: jpshackelford/ohtv
+Title: [Implementation] Issue #{issue_number} - {issue_title}
+Prompt: |
+  You are implementing GitHub Issue #{issue_number} for the ohtv project.
+
+  **ISSUE TO IMPLEMENT:**
+  - Issue: #{issue_number} - {issue_title}
+  - URL: https://github.com/jpshackelford/ohtv/issues/{issue_number}
+  - Priority: {priority_label}
+
+  This issue has already been expanded with technical detail. Read the issue
+  description AND comments for the implementation approach.
+
+  1. Read the issue description AND comments: gh issue view {issue_number} --comments
+  2. The technical approach comment tells you what to build
+  3. Create a feature branch from main (ensure main is up-to-date)
+  4. Implement following the approach in the issue comments
+  5. Write tests (target >80% coverage for new code)
+  6. Run lints and type checks, fix any issues
+  7. Commit with clear messages, push, create a DRAFT PR
+  8. Link PR to issue: Include "Fixes #{issue_number}" in PR description
+  9. Monitor CI, fix any failures until green
+  10. Once CI is green, REFLECT:
+      - Are all acceptance criteria from the issue met?
+      - Note any learnings or follow-up items
+  11. Move PR from draft to ready (triggers review bot)
+  12. Update WORKLOG.md on main with PR link
+  13. Exit - docs/testing/review handling is a separate conversation
+
+Plugins: github:jpshackelford/.openhands/plugins/ohtv-workflow@feat/ohtv-workflow-plugin
+Issue Number: {issue_number}
+Worker Type: implementation
+```
+
 ### Documentation Worker
+
+**Worker Type:** `docs`
+**Slot:** PR slot (serialized with implementation/testing/review/merge)
 
 Use when: PR has user-facing changes but README.md hasn't been updated yet.
 
@@ -447,33 +722,96 @@ PR Number: {number}
 
 After each orchestrator run, append a status update to `WORKLOG.md` in the repo root.
 
-### Log Entry Format
+### Log Entry Format with Active Workers Table
+
+Include the conversation ID (first 7 chars) in the Active Workers table:
 
 ```markdown
 ### 2025-05-05 10:30 UTC - Orchestrator
 
+**Active Workers:**
+| Conv ID | Type | Working On | Status |
+|---------|------|------------|--------|
+| `abc1234` | expansion | Issue #9 - Scope messages | running |
+| `def5678` | implementation | Issue #7 - WebSocket | running |
+
 **Current State:**
-- [PR #42](https://github.com/jpshackelford/ohtv/pull/42): `oC green ready` 
-  - Manual testing: ✅ Posted
-  - Review status: 💬2 unresolved threads
+- [PR #42](https://github.com/jpshackelford/ohtv/pull/42): `oC green ready` 💬2
+- Issues needing expansion: #11, #12
+- Ready issues: #9 (priority:high), #10 (priority:medium)
 
 **Action Taken:**
-🚀 Spawned review worker to address feedback
-- Conversation: https://app.all-hands.dev/conversations/{conv_id}
+✅ Both worker slots occupied - no action needed
 
 ---
 ```
 
-### When Spawning a Testing Worker
+### When Spawning a Worker
 
 ```markdown
 ### 2025-05-05 14:00 UTC - Orchestrator
 
-🧪 **Launched: Testing Worker**
+**Active Workers:**
+| Conv ID | Type | Working On | Status |
+|---------|------|------------|--------|
+| `ghi9012` | expansion | Issue #11 - Session View | **NEW** |
 
-Testing [PR #42](https://github.com/jpshackelford/ohtv/pull/42): Add --repair option
-- CI is green, ready for manual testing
-- Conversation: https://app.all-hands.dev/conversations/{conv_id}
+**Spawned: Expansion Worker**
+- Issue: [#11 - Session View](https://github.com/jpshackelford/ohtv/issues/11)
+- Conversation: [`ghi9012`](https://app.all-hands.dev/conversations/ghi9012...)
+
+**Current State:**
+- No open PRs
+- Ready issues: #9, #10 (awaiting implementation)
+- Issues needing expansion: #11 (now being expanded), #12
+
+---
+```
+
+### When Spawning Multiple Workers (Parallel)
+
+```markdown
+### 2025-05-05 14:30 UTC - Orchestrator
+
+**Active Workers:**
+| Conv ID | Type | Working On | Status |
+|---------|------|------------|--------|
+| `abc1234` | expansion | Issue #12 - CLI flag | **NEW** |
+| `def5678` | implementation | Issue #9 - Scope messages | **NEW** |
+
+**Spawned: 2 Workers (parallel)**
+
+1. **Expansion Worker**
+   - Issue: [#12 - CLI flag](https://github.com/jpshackelford/ohtv/issues/12)
+   - Conversation: [`abc1234`](https://app.all-hands.dev/conversations/abc1234...)
+
+2. **Implementation Worker**  
+   - Issue: [#9 - Scope messages](https://github.com/jpshackelford/ohtv/issues/9) (priority:high)
+   - Conversation: [`def5678`](https://app.all-hands.dev/conversations/def5678...)
+
+---
+```
+
+### When Workers Complete
+
+Update status when checking workers:
+
+```markdown
+### 2025-05-05 15:00 UTC - Orchestrator
+
+**Active Workers:**
+| Conv ID | Type | Working On | Status |
+|---------|------|------------|--------|
+| `abc1234` | expansion | Issue #12 | finished ✓ |
+| `def5678` | implementation | Issue #9 | running |
+
+**Worker Completed:** `abc1234` (expansion)
+- Issue #12 now has `ready` label
+
+**Current State:**
+- PR #6 in progress (Issue #9)
+- Ready issues: #10, #12
+- No issues need expansion 🎉
 
 ---
 ```
@@ -481,14 +819,18 @@ Testing [PR #42](https://github.com/jpshackelford/ohtv/pull/42): Add --repair op
 ### When No Action Needed
 
 ```markdown
-### 2025-05-05 14:30 UTC - Orchestrator
+### 2025-05-05 15:30 UTC - Orchestrator
 
-✅ **All quiet** - No action needed
+**Active Workers:**
+| Conv ID | Type | Working On | Status |
+|---------|------|------------|--------|
+| `def5678` | implementation | Issue #9 | running |
 
-- [PR #42](https://github.com/jpshackelford/ohtv/pull/42): Waiting for review
-  - Manual testing: ✅ Posted
-  - Review: In progress (awaiting reviewer)
-- No active conversations found
+✅ **All quiet** - PR slot occupied, expansion slot empty (nothing to expand)
+
+- [PR #6](https://github.com/jpshackelford/ohtv/pull/6) in progress
+- All issues expanded
+- Next check in ~30 minutes
 
 ---
 ```
