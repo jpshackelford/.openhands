@@ -95,17 +95,17 @@ flowchart LR
 
 ## Skills Reference
 
-### Issue Phase
-| Skill | Trigger | Purpose |
-|-------|---------|---------|
-| [Expand Issue](skills/expand-issue.md) | `/expand-issue` | Investigate issue, add technical detail, label `ready` |
-| [Assess Priority](skills/assess-priority.md) | `/assess-priority` | Score ready issues, assign `priority:*` labels |
-
 ### Orchestration
 | Skill | Trigger | Purpose |
 |-------|---------|---------|
 | [Orchestrate](skills/orchestrate.md) | `/orchestrate` | Main decision loop—check state, dispatch workers |
 | [Spawn Conversation](skills/spawn-conversation.md) | `/spawn-conversation` | Start OpenHands conversation via API |
+
+### Issue Phase
+| Skill | Trigger | Purpose |
+|-------|---------|---------|
+| [Expand Issue](skills/expand-issue.md) | `/expand-issue` | Investigate issue, add technical detail, label `ready` |
+| [Assess Priority](skills/assess-priority.md) | `/assess-priority` | Score ready issues, assign `priority:*` labels |
 
 ### PR Phase
 | Skill | Trigger | Purpose |
