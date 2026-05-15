@@ -59,11 +59,6 @@ flowchart TB
     decide -.->|"PR needs testing"| test
     decide -.->|"PR has feedback"| review
     decide -.->|"PR approved"| merge
-
-    style Orchestrator fill:#1a1a2e,stroke:#4a4a6a,color:#fff
-    style ExpansionSlot fill:#2d4a3e,stroke:#4a7a5a,color:#fff
-    style PRSlot fill:#3a2a4a,stroke:#6a4a7a,color:#fff
-    style main fill:#2a5a2a,stroke:#4a8a4a,color:#fff
 ```
 
 ## How It Works
