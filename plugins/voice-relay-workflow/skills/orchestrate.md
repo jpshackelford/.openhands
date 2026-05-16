@@ -526,6 +526,7 @@ Prompt: |
   **WHEN DONE:**
   1. Add `ready` label: gh issue edit {issue_number} --add-label ready
   2. Update WORKLOG.md on main with completion status
+     ⚠️ WORKLOG.md changes ALWAYS go directly to main, never in feature branches/PRs
   3. Exit
   
   **IF BLOCKED:**
@@ -583,6 +584,7 @@ Prompt: |
       - Note any learnings or follow-up items
   12. Move PR from draft to ready (triggers review bot)
   13. Update WORKLOG.md on main with PR link
+      ⚠️ WORKLOG.md changes ALWAYS go directly to main, never in feature branches/PRs
   14. Exit - review handling is a separate conversation
   
 Plugins: github:jpshackelford/.openhands/plugins/voice-relay-workflow@add-voice-relay-workflow-plugin
@@ -625,6 +627,7 @@ Prompt: |
      - If so, add comments to relevant issues
   9. Move PR back to ready: gh pr ready {number}
   10. Update WORKLOG.md on main with status
+      ⚠️ WORKLOG.md changes ALWAYS go directly to main, never in feature branches/PRs
   11. Exit - next review round is a separate conversation
 
 Plugins: github:jpshackelford/.openhands/plugins/voice-relay-workflow@add-voice-relay-workflow-plugin
@@ -680,6 +683,12 @@ After each orchestrator run, append a status update to `WORKLOG.md` in the repo 
 1. **Persistent log** of all workflow activity
 2. **Worker tracking** - conversation IDs and what they're doing
 3. **Human visibility** - anyone can see what's happening
+
+> ⚠️ **CRITICAL: WORKLOG.md changes ALWAYS go directly to main branch.**
+> 
+> Never include WORKLOG.md changes in feature branches or PRs. When updating
+> the worklog, checkout main, make the change, commit, and push to main directly.
+> This keeps the worklog as a clean, linear record of workflow activity.
 
 ### Standard Log Entry Format
 
