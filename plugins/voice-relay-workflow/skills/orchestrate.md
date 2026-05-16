@@ -362,6 +362,156 @@ gh issue list --repo jpshackelford/voice-relay --state open --label "ready" --js
 | Blocked | Has `blocked` label | Skip until unblocked |
 | Needs info | Has `needs-info` label | Skip until reporter responds |
 
+## Handling Stuck PRs Requiring Human Intervention
+
+**CRITICAL:** When a PR cannot progress without human intervention, the orchestrator should NOT become idle. Instead, it should continue working on other issues to maintain productivity.
+
+### Stuck PR Indicators
+
+A PR is considered "stuck" and requiring human intervention when:
+
+| Indicator | Detection Method | How to Handle |
+|-----------|------------------|---------------|
+| PR has `blocked` label | `gh pr view --json labels` | Add `needs-human` label, move to next issue |
+| PR has `needs-human` label | `gh pr view --json labels` | Skip PR, work on other issues |
+| Multiple consecutive failed review rounds | Check WORKLOG.md for repeated review failures on same PR | Mark with `needs-human`, proceed to other work |
+| CI consistently failing with infrastructure issues | Check workflow conclusions | Add `needs-human` label if not code-related |
+| Merge conflicts that can't be auto-resolved | Check PR mergeable status | Add `needs-human` label, move to next issue |
+
+### Detection Logic
+
+```bash
+# Check if current PR is stuck/needs human intervention
+PR_LABELS=$(gh pr view --repo jpshackelford/voice-relay --json labels -q '.labels[].name')
+
+IS_STUCK=false
+if echo "$PR_LABELS" | grep -qE "(blocked|needs-human|needs-info)"; then
+  IS_STUCK=true
+fi
+
+# Also check for repeated review failures (same PR, multiple rounds without progress)
+REVIEW_ATTEMPTS=$(grep -c "Review Round.*PR #$PR_NUMBER" WORKLOG.md 2>/dev/null || echo 0)
+if [ "$REVIEW_ATTEMPTS" -ge 3 ]; then
+  # Check if last 3 were all failures or no progress
+  RECENT_PROGRESS=$(tail -50 WORKLOG.md | grep -c "✅.*PR #$PR_NUMBER")
+  if [ "$RECENT_PROGRESS" -eq 0 ]; then
+    IS_STUCK=true
+    # Add needs-human label
+    gh pr edit $PR_NUMBER --add-label "needs-human"
+  fi
+fi
+```
+
+### When a PR is Stuck: Work on Other Issues
+
+**If a PR is stuck but other ready issues exist:**
+
+1. **Do NOT wait** for the stuck PR to be unblocked
+2. **Continue expansion work** if issues need expansion (expansion slot)
+3. **Start a new implementation** for the next priority issue (PR slot)
+   - This creates a second open PR, which is acceptable when the first is stuck
+4. **Log clearly** in WORKLOG.md that the stuck PR is being deferred
+
+```markdown
+### 2025-05-05 16:00 UTC - Orchestrator
+
+**Stuck PR Deferred:**
+- [PR #5](https://github.com/jpshackelford/voice-relay/pull/5) - blocked: `needs-human` label
+- Reason: Requires manual conflict resolution
+- Deferred until human resolves the issue
+
+**Active Workers:**
+| Conv ID | Type | Working On | Status |
+|---------|------|------------|--------|
+| `xyz7890` | implementation | Issue #10 - Dashboard redesign | **NEW** |
+
+**Action Taken:**
+🚀 **Spawned implementation worker** for Issue #10 (next priority)
+- Stuck PR #5 bypassed - work continues on Issue #10
+
+---
+```
+
+### Decision Priority for Stuck PRs
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  STUCK PR HANDLING                                               │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  1. CHECK: Is current PR stuck?                                 │
+│     ├─ Has blocked/needs-human/needs-info label                 │
+│     ├─ Multiple failed review rounds without progress           │
+│     ├─ Unresolvable merge conflicts                             │
+│     └─ Infrastructure CI failures                               │
+│                                                                  │
+│  2. IF STUCK:                                                   │
+│     ├─ Add `needs-human` label (if not already present)         │
+│     ├─ Log deferral in WORKLOG.md                               │
+│     └─ Treat PR slot as AVAILABLE for next issue                │
+│                                                                  │
+│  3. CONTINUE WORK:                                              │
+│     ├─ If other ready+prioritized issues exist → Spawn impl    │
+│     ├─ If issues need expansion → Spawn expansion worker        │
+│     └─ If ALL issues depend on stuck PR → Log + wait            │
+│                                                                  │
+│  4. ONLY STOP WORK WHEN:                                        │
+│     └─ ALL remaining issues are blocked by the stuck PR         │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Dependency Detection
+
+Before starting work on another issue, check if it depends on the stuck PR:
+
+```bash
+# Check if an issue mentions the stuck PR or its issue number
+STUCK_PR_ISSUE=$(gh pr view $STUCK_PR_NUMBER --json body -q '.body' | grep -oP 'Fixes #\K\d+' | head -1)
+
+for issue_num in $READY_ISSUES; do
+  # Check if issue body/comments reference the stuck PR's issue
+  ISSUE_BODY=$(gh issue view $issue_num --comments)
+  
+  if echo "$ISSUE_BODY" | grep -qE "(depends on|blocked by|after).*(#$STUCK_PR_ISSUE|PR #$STUCK_PR_NUMBER)"; then
+    echo "Issue #$issue_num depends on stuck PR - skipping"
+    continue
+  fi
+  
+  # This issue is independent - can be worked on
+  echo "Issue #$issue_num is independent - can proceed"
+  break
+done
+```
+
+### WORKLOG Entry When All Work is Blocked
+
+Only if ALL remaining issues depend on the stuck PR should work stop:
+
+```markdown
+### 2025-05-05 17:00 UTC - Orchestrator
+
+**⚠️ All Work Blocked**
+
+All remaining issues depend on stuck PR #5 which requires human intervention.
+
+**Stuck PR:**
+- [PR #5](https://github.com/jpshackelford/voice-relay/pull/5) - `needs-human` label
+- Blocking issues: #10, #11, #12 (all depend on session architecture from PR #5)
+
+**Waiting for human to:**
+1. Resolve merge conflicts in PR #5
+2. Or close PR #5 and re-prioritize remaining issues
+
+**No action taken** - automation will continue checking but cannot progress.
+
+---
+```
+
+### Key Principle
+
+**Maximize productivity:** The orchestrator should always be doing useful work when possible. A single stuck PR should never halt progress on independent issues. Only when ALL issues are genuinely blocked should the orchestrator wait.
+
 ## Decision Tree
 
 ### Expansion Slot (can run parallel to PR work)
@@ -382,9 +532,11 @@ gh issue list --repo jpshackelford/voice-relay --state open --label "ready" --js
 | PR exists, ready, no reviews yet | Wait (review bot running) |
 | PR exists, ready, 💬 > 0 | Spawn **review worker** |
 | PR exists, ready, 💬 = 0, merge criteria met | Spawn **merge worker** |
+| **PR exists but STUCK** (blocked/needs-human/needs-info) | **Treat slot as available** - proceed to next issue |
 | No open PR + ready issues with priority | Spawn **impl worker** for highest priority ready issue |
 | No open PR + ready issues, no priority | Run `/assess-priority` inline, then spawn impl worker |
 | No open PR + no ready issues | Nothing to implement (wait for expansion) |
+| All issues depend on stuck PR | Log "All Work Blocked" + wait for human |
 
 ### Combined Decision Flow
 
@@ -402,11 +554,15 @@ gh issue list --repo jpshackelford/voice-relay --state open --label "ready" --js
 │  2. CHECK PR SLOT                                                │
 │     ├─ Active PR worker? → Log status, exit                     │
 │     └─ Open PR exists?                                          │
-│         ├─ YES → Handle PR state (wait/review/merge)            │
-│         └─ NO  → Ready issues exist?                            │
-│                   ├─ YES → Prioritized?                         │
-│                   │         ├─ YES → Spawn impl (highest prio)  │
-│                   │         └─ NO  → /assess-priority, spawn    │
+│         ├─ YES → Is PR STUCK (blocked/needs-human/needs-info)?  │
+│         │         ├─ YES → Treat as no open PR, proceed below   │
+│         │         └─ NO  → Handle PR state (wait/review/merge)  │
+│         └─ NO (or stuck) → Ready issues exist?                  │
+│                   ├─ YES → Any independent of stuck PR?         │
+│                   │         ├─ YES → Prioritized?               │
+│                   │         │         ├─ YES → Spawn impl       │
+│                   │         │         └─ NO  → /assess-priority │
+│                   │         └─ NO  → Log "All Work Blocked"     │
 │                   └─ NO  → Nothing to implement                 │
 │                                                                  │
 │  3. LOG STATUS TO WORKLOG.md                                    │
