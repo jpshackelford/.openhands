@@ -29,17 +29,20 @@ Work items are tracked as **GitHub Issues**. Each issue goes through two phases:
 
 ## Parallel Work Model
 
-The orchestrator can run **two workers simultaneously**:
+The orchestrator can run **up to 7 workers simultaneously**:
 
-| Slot | Worker Types | Purpose |
-|------|--------------|---------|
-| **Expansion Slot** | `expansion` | Analyze issues, add technical detail |
-| **PR Slot** | `implementation`, `review`, `merge` | Code changes, PR lifecycle |
+| Slot Type | Max | Worker Types | Purpose |
+|-----------|-----|--------------|----------|
+| **Expansion** | 4 | `expansion` | Analyze issues, add technical detail |
+| **Implementation** | 1 | `implementation` | Create branch, write code, open PR |
+| **Review** | 2 | `review`, `merge` | Address PR feedback, fix CI, merge |
 
-✅ Both slots can be filled at the same time  
-❌ Cannot have 2 workers in the same slot
+**Total: up to 7 concurrent conversations**
 
-## Issue Lifecycle
+✅ All slot types can run in parallel
+✅ Implementation not blocked by review cycle
+✅ Multiple issues can be expanded simultaneously
+
 
 ```
 New Issue → Expansion → Ready → Prioritized → Implementation → PR → Review → Merge
@@ -55,19 +58,27 @@ New Issue → Expansion → Ready → Prioritized → Implementation → PR → 
     └── No 'ready' label
 ```
 
-## Worker Tracking via WORKLOG.md
+## Worker Tracking via .workflow-state.json
 
-All active workers are tracked in WORKLOG.md on main:
+Active workers are tracked in `.workflow-state.json` (machine-readable) and logged to `WORKLOG.md` (human-readable):
 
-```markdown
-**Active Workers:**
-| Conv ID | Type | Working On | Status |
-|---------|------|------------|--------|
-| `abc1234` | expansion | Issue #10 - QR code flow | running |
-| `def5678` | implementation | Issue #9 - Scope messages | running |
+```json
+{
+  "slots": {
+    "expansion": [
+      {"conv_id": "abc1234", "issue": 10, "started": "2025-05-17T18:00:00Z"}
+    ],
+    "implementation": [
+      {"conv_id": "def5678", "issue": 9, "started": "2025-05-17T17:30:00Z"}
+    ],
+    "review": []
+  },
+  "limits": {"expansion": 4, "implementation": 1, "review": 2}
+}
 ```
 
-Humans and the orchestrator can see exactly what's running and what each conversation is doing.
+The orchestrator queries the OH API to check if each conversation is still `running` or `finished`, then updates the state file accordingly.
+
 
 ## lxa for Visibility
 
@@ -191,7 +202,7 @@ curl -X POST "https://app.all-hands.dev/api/automation/v1/preset/plugin" \
     "prompt": "/orchestrate",
     "trigger": {
       "type": "cron",
-      "schedule": "*/30 * * * *",
+      "schedule": "*/15 * * * *",
       "timezone": "America/New_York"
     },
     "repos": [

@@ -33,25 +33,42 @@ This skill runs automatically via cron automation. It:
 
 ## Parallel Work Model
 
-The orchestrator can run **two workers simultaneously**:
+The orchestrator can run **up to 7 workers simultaneously** across three slot types:
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│  PARALLEL WORK SLOTS                                             │
+│  PARALLEL WORK SLOTS (max 7 concurrent conversations)           │
 ├─────────────────────────────────────────────────────────────────┤
-│  SLOT 1: Expansion Worker (0 or 1 active)                       │
+│  EXPANSION SLOTS (0-4 active)                                   │
 │    - Analyzes issues, finds root cause, adds technical detail   │
 │    - Only touches issues (labels, comments) - no code changes   │
+│    - Can run up to 4 in parallel                                │
 │                                                                   │
-│  SLOT 2: PR Worker (0 or 1 active)                              │
-│    - Implementation, Review, or Merge worker                     │
-│    - Touches code, branches, PRs - must be serialized           │
+│  IMPLEMENTATION SLOT (0-1 active)                               │
+│    - Implements the next priority issue                         │
+│    - Creates branch, writes code, opens PR                      │
+│    - Only 1 at a time to avoid branch conflicts                 │
 │                                                                   │
-│  ✅ Both slots can be filled simultaneously                      │
-│  ❌ Cannot have 2 expansion workers                              │
-│  ❌ Cannot have 2 PR workers                                     │
+│  REVIEW SLOTS (0-2 active)                                      │
+│    - Addresses review feedback on open PRs                      │
+│    - Fixes CI failures                                          │
+│    - Can work on up to 2 PRs simultaneously                     │
+│                                                                   │
+│  ✅ All slot types can run in parallel                          │
+│  ✅ Implementation not blocked by review cycle                  │
+│  ✅ Multiple issues can be expanded simultaneously              │
 └─────────────────────────────────────────────────────────────────┘
 ```
+
+### Slot Limits
+
+| Slot Type | Max Active | Purpose |
+|-----------|------------|---------|
+| Expansion | 4 | Analyze and expand issues in parallel |
+| Implementation | 1 | Implement one issue at a time (avoids conflicts) |
+| Review | 2 | Address PR feedback / fix CI on multiple PRs |
+
+**Total max: 7 concurrent conversations**
 
 ## Workflow Overview
 
@@ -63,8 +80,9 @@ The orchestrator can run **two workers simultaneously**:
 │  0.5. HOUSEKEEPING: Truncate worklog if large (>300 lines)      │
 │  1. READ WORKLOG.md for human instructions (FIRST!)             │
 │  2. If human instructions found → follow them, then exit        │
-│  3. PARSE WORKLOG.md for active workers (by conv ID)            │
+│  3. LOAD .workflow-state.json for active workers                │
 │  4. CHECK which workers are still running (API query)           │
+│  4.5. UPDATE .workflow-state.json (remove finished workers)     │
 │  5. GATHER STATE:                                                │
 │     - Open PRs (lxa pr list)                                    │
 │     - Issues by label: ready, needs-triage, priority:*          │
@@ -269,59 +287,149 @@ Proceed with normal workflow (Step 2 onwards).
 
 ## Step 2: Check for Active Workers
 
-Parse WORKLOG.md to find recently spawned workers, then verify if they're still running.
+Load `.workflow-state.json` and verify which workers are still running via API.
 
-### Extract Worker Info from WORKLOG.md
+### State File Structure
 
-Look for recent spawn entries with conversation IDs:
+The orchestrator uses `.workflow-state.json` to track active conversations:
 
-```bash
-# Get last 100 lines, find spawn entries with conv IDs
-# Format in WORKLOG: | `abc1234` | expansion | Issue #9 - Title | timestamp |
-grep -E "^\| \`[a-f0-9]{7}\` \|" WORKLOG.md | tail -10
+```json
+{
+  "version": 1,
+  "slots": {
+    "expansion": [
+      {"conv_id": "abc1234", "issue": 9, "started": "2025-05-17T18:00:00Z"}
+    ],
+    "implementation": [
+      {"conv_id": "def5678", "issue": 12, "started": "2025-05-17T17:30:00Z"}
+    ],
+    "review": [
+      {"conv_id": "ghi9012", "pr": 42, "started": "2025-05-17T17:45:00Z"}
+    ]
+  },
+  "limits": {
+    "expansion": 4,
+    "implementation": 1,
+    "review": 2
+  },
+  "last_updated": "2025-05-17T18:15:00Z"
+}
 ```
 
-Or look for the "Active Workers" table format:
+### Load and Validate State
 
 ```bash
-# Extract conv IDs and types from recent entries
-grep -A10 "Active Workers:" WORKLOG.md | tail -15
+# Load state file (create if missing)
+STATE_FILE=".workflow-state.json"
+if [ ! -f "$STATE_FILE" ]; then
+  echo '{"version":1,"slots":{"expansion":[],"implementation":[],"review":[]},"limits":{"expansion":4,"implementation":1,"review":2},"last_updated":null}' > "$STATE_FILE"
+fi
+
+# Parse current slots
+EXPANSION_WORKERS=$(jq -r '.slots.expansion | length' "$STATE_FILE")
+IMPL_WORKERS=$(jq -r '.slots.implementation | length' "$STATE_FILE")
+REVIEW_WORKERS=$(jq -r '.slots.review | length' "$STATE_FILE")
+
+echo "Current workers: expansion=$EXPANSION_WORKERS, impl=$IMPL_WORKERS, review=$REVIEW_WORKERS"
 ```
 
 ### Check if Conversations are Still Running
 
-For each conversation ID found, query the API:
+For each conversation ID in state, query the API to check status:
 
 ```bash
 # Check conversation status by ID prefix
-conv_id="abc1234"
-curl -s "https://app.all-hands.dev/api/v1/app-conversations/search?limit=50" \
-  -H "Authorization: Bearer ${OH_API_KEY}" \
-| jq -r ".items[] | select(.id | startswith(\"$conv_id\")) | {id: .id[0:7], status: .execution_status, title: .title}"
+check_conv_status() {
+  local conv_id="$1"
+  curl -s "https://app.all-hands.dev/api/v1/app-conversations/search?limit=50" \
+    -H "Authorization: Bearer ${OH_API_KEY}" \
+  | jq -r ".items[] | select(.id | startswith(\"$conv_id\")) | .execution_status" \
+  | head -1
+}
+
+# Example: check_conv_status "abc1234" → "running" or "finished"
 ```
 
 **Status values:**
 - `running` = worker is active, don't spawn duplicate
-- `finished` = worker completed
+- `finished` = worker completed, remove from state
 - `error` / `stuck` = worker failed (may need attention)
+
+### Update State - Remove Finished Workers
+
+```python
+#!/usr/bin/env python3
+import json
+import subprocess
+import os
+
+STATE_FILE = ".workflow-state.json"
+OH_API_KEY = os.environ.get("OH_API_KEY")
+
+def check_conv_status(conv_id):
+    """Query API for conversation status."""
+    result = subprocess.run([
+        "curl", "-s", 
+        f"https://app.all-hands.dev/api/v1/app-conversations/search?limit=50",
+        "-H", f"Authorization: Bearer {OH_API_KEY}"
+    ], capture_output=True, text=True)
+    
+    try:
+        data = json.loads(result.stdout)
+        for item in data.get("items", []):
+            if item["id"].startswith(conv_id):
+                return item.get("execution_status", "unknown")
+    except:
+        pass
+    return "unknown"
+
+def update_state():
+    """Remove finished workers from state."""
+    with open(STATE_FILE, 'r') as f:
+        state = json.load(f)
+    
+    updated = False
+    for slot_type in ["expansion", "implementation", "review"]:
+        active = []
+        for worker in state["slots"][slot_type]:
+            status = check_conv_status(worker["conv_id"])
+            if status == "running":
+                active.append(worker)
+            else:
+                print(f"✓ {slot_type} worker {worker['conv_id']} finished")
+                updated = True
+        state["slots"][slot_type] = active
+    
+    if updated:
+        from datetime import datetime, timezone
+        state["last_updated"] = datetime.now(timezone.utc).isoformat()
+        with open(STATE_FILE, 'w') as f:
+            json.dump(state, f, indent=2)
+    
+    return state
+
+state = update_state()
+print(f"Active: expansion={len(state['slots']['expansion'])}, "
+      f"impl={len(state['slots']['implementation'])}, "
+      f"review={len(state['slots']['review'])}")
+```
 
 ### Determine Available Slots
 
-```bash
-# Pseudo-code for slot availability
-ACTIVE_EXPANSION=false
-ACTIVE_PR_WORKER=false
+```python
+# After updating state, check available slots
+LIMITS = state["limits"]
+SLOTS = state["slots"]
 
-for each spawned_worker in WORKLOG.md (last 4 hours):
-    status = query_api(worker.conv_id)
-    if status == "running":
-        if worker.type == "expansion":
-            ACTIVE_EXPANSION=true
-        else:  # implementation, review, merge
-            ACTIVE_PR_WORKER=true
+CAN_SPAWN_EXPANSION = len(SLOTS["expansion"]) < LIMITS["expansion"]
+CAN_SPAWN_IMPL = len(SLOTS["implementation"]) < LIMITS["implementation"]
+CAN_SPAWN_REVIEW = len(SLOTS["review"]) < LIMITS["review"]
 
-CAN_SPAWN_EXPANSION = !ACTIVE_EXPANSION
-CAN_SPAWN_PR_WORKER = !ACTIVE_PR_WORKER
+EXPANSION_AVAILABLE = LIMITS["expansion"] - len(SLOTS["expansion"])  # 0-4
+IMPL_AVAILABLE = LIMITS["implementation"] - len(SLOTS["implementation"])  # 0-1
+REVIEW_AVAILABLE = LIMITS["review"] - len(SLOTS["review"])  # 0-2
+
+print(f"Available slots: expansion={EXPANSION_AVAILABLE}, impl={IMPL_AVAILABLE}, review={REVIEW_AVAILABLE}")
 ```
 
 ## Gather State
@@ -514,91 +622,111 @@ All remaining issues depend on stuck PR #5 which requires human intervention.
 
 ## Decision Tree
 
-### Expansion Slot (can run parallel to PR work)
+### Expansion Slots (up to 4 parallel)
 
 | Condition | Action |
 |-----------|--------|
-| `CAN_SPAWN_EXPANSION` + issues need expansion | Spawn **expansion worker** for oldest unexpanded issue |
-| `CAN_SPAWN_EXPANSION` + no issues need expansion | Slot idle (all issues expanded) |
-| `!CAN_SPAWN_EXPANSION` | Wait (expansion worker running) |
+| `EXPANSION_AVAILABLE > 0` + issues need expansion | Spawn expansion worker(s) for oldest unexpanded issues (up to available slots) |
+| `EXPANSION_AVAILABLE > 0` + no issues need expansion | Slots idle (all issues expanded) |
+| `EXPANSION_AVAILABLE = 0` | All 4 expansion slots full, wait |
 
-### PR Slot (Implementation → Review → Merge)
+### Implementation Slot (1 max)
 
 | Condition | Action |
 |-----------|--------|
-| `!CAN_SPAWN_PR_WORKER` | Wait (PR worker running) |
-| PR exists, draft, CI failing | Wait (impl worker may still be active) |
-| PR exists, draft, CI green | Wait (impl worker finishing up) |
-| PR exists, ready, no reviews yet | Wait (review bot running) |
-| PR exists, ready, 💬 > 0 | Spawn **review worker** |
-| PR exists, ready, 💬 = 0, merge criteria met | Spawn **merge worker** |
-| **PR exists but STUCK** (blocked/needs-human/needs-info) | **Treat slot as available** - proceed to next issue |
-| No open PR + ready issues with priority | Spawn **impl worker** for highest priority ready issue |
-| No open PR + ready issues, no priority | Run `/assess-priority` inline, then spawn impl worker |
-| No open PR + no ready issues | Nothing to implement (wait for expansion) |
-| All issues depend on stuck PR | Log "All Work Blocked" + wait for human |
+| `IMPL_AVAILABLE = 0` | Wait (implementation worker running) |
+| `IMPL_AVAILABLE = 1` + ready issues with priority | Spawn **impl worker** for highest priority ready issue |
+| `IMPL_AVAILABLE = 1` + ready issues, no priority | Run `/assess-priority` inline, then spawn impl worker |
+| `IMPL_AVAILABLE = 1` + no ready issues | Nothing to implement (wait for expansion) |
+
+### Review Slots (up to 2 parallel)
+
+| Condition | Action |
+|-----------|--------|
+| `REVIEW_AVAILABLE = 0` | Both review slots full, wait |
+| `REVIEW_AVAILABLE > 0` + PR needs review (💬 > 0) | Spawn **review worker** |
+| `REVIEW_AVAILABLE > 0` + PR ready to merge | Spawn **merge worker** |
+| **PR STUCK** (blocked/needs-human/needs-info) | Skip this PR, check for other PRs needing review |
 
 ### Combined Decision Flow
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│  DECISION FLOW                                                   │
+│  DECISION FLOW (7 slots: 4 expansion + 1 impl + 2 review)       │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                  │
-│  1. CHECK EXPANSION SLOT                                         │
-│     ├─ Active expansion worker? → Skip to PR slot               │
-│     └─ Issues need expansion?                                    │
-│         ├─ YES → Spawn expansion worker (oldest issue)          │
-│         └─ NO  → Expansion slot idle                            │
+│  1. CHECK EXPANSION SLOTS (0-4 available)                       │
+│     ├─ Count issues needing expansion                           │
+│     ├─ For each available slot (up to 4):                       │
+│     │     └─ Spawn expansion worker for next oldest issue       │
+│     └─ Log how many spawned                                     │
 │                                                                  │
-│  2. CHECK PR SLOT                                                │
-│     ├─ Active PR worker? → Log status, exit                     │
-│     └─ Open PR exists?                                          │
-│         ├─ YES → Is PR STUCK (blocked/needs-human/needs-info)?  │
-│         │         ├─ YES → Treat as no open PR, proceed below   │
-│         │         └─ NO  → Handle PR state (wait/review/merge)  │
-│         └─ NO (or stuck) → Ready issues exist?                  │
-│                   ├─ YES → Any independent of stuck PR?         │
-│                   │         ├─ YES → Prioritized?               │
-│                   │         │         ├─ YES → Spawn impl       │
-│                   │         │         └─ NO  → /assess-priority │
-│                   │         └─ NO  → Log "All Work Blocked"     │
-│                   └─ NO  → Nothing to implement                 │
+│  2. CHECK IMPLEMENTATION SLOT (0-1 available)                   │
+│     ├─ Slot occupied? → Skip to review slots                    │
+│     └─ Slot available?                                          │
+│         └─ Ready issues exist?                                  │
+│               ├─ YES → Prioritized?                             │
+│               │         ├─ YES → Spawn impl worker              │
+│               │         └─ NO  → /assess-priority, then spawn  │
+│               └─ NO  → Nothing to implement                     │
 │                                                                  │
-│  3. LOG STATUS TO WORKLOG.md                                    │
+│  3. CHECK REVIEW SLOTS (0-2 available)                          │
+│     ├─ List open PRs needing review (💬 > 0 or merge-ready)     │
+│     ├─ Skip any STUCK PRs (blocked/needs-human)                 │
+│     ├─ For each available slot (up to 2):                       │
+│     │     └─ Spawn review/merge worker for next PR              │
+│     └─ Log how many spawned                                     │
 │                                                                  │
-│  4. EXIT                                                        │
+│  4. UPDATE .workflow-state.json with new workers                │
+│                                                                  │
+│  5. LOG STATUS TO WORKLOG.md                                    │
+│                                                                  │
+│  6. COMMIT state changes and EXIT                               │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
 ## Avoiding Duplicate Work
 
-The orchestrator tracks active workers via **WORKLOG.md** entries. Each spawn is logged with a 7-character conversation ID prefix, worker type, and what it's working on.
+The orchestrator tracks active workers via **`.workflow-state.json`** (primary) and logs to **WORKLOG.md** (human-readable history).
 
-### Primary Method: WORKLOG.md Tracking
+### Primary Method: JSON State Tracking
 
-When spawning a worker, log it in this format:
+When spawning a worker, update `.workflow-state.json`:
 
-```markdown
-**Active Workers:**
-| Conv ID | Type | Working On | Started |
-|---------|------|------------|---------|
-| `abc1234` | expansion | Issue #9 - Scope messages | 14:00 UTC |
-| `def5678` | implementation | Issue #7 - WebSocket | 13:15 UTC |
+```python
+def spawn_worker(slot_type, conv_id, target_id, target_type="issue"):
+    """Add a new worker to the state file."""
+    with open(".workflow-state.json", 'r') as f:
+        state = json.load(f)
+    
+    worker = {
+        "conv_id": conv_id[:7],  # 7-char prefix
+        target_type: target_id,   # "issue": 9 or "pr": 42
+        "started": datetime.now(timezone.utc).isoformat()
+    }
+    state["slots"][slot_type].append(worker)
+    state["last_updated"] = datetime.now(timezone.utc).isoformat()
+    
+    with open(".workflow-state.json", 'w') as f:
+        json.dump(state, f, indent=2)
+    
+    # Also log to WORKLOG.md for human visibility
+    log_to_worklog(slot_type, conv_id, target_id)
 ```
 
-To check if a worker is still running:
+### Check Slot Availability
 
-```bash
-# 1. Extract recent conv IDs from WORKLOG.md
-CONV_IDS=$(grep -oE '\`[a-f0-9]{7}\`' WORKLOG.md | tr -d '`' | tail -10 | sort -u)
+```python
+def get_available_slots(state):
+    """Return count of available slots per type."""
+    return {
+        "expansion": state["limits"]["expansion"] - len(state["slots"]["expansion"]),
+        "implementation": state["limits"]["implementation"] - len(state["slots"]["implementation"]),
+        "review": state["limits"]["review"] - len(state["slots"]["review"])
+    }
 
-# 2. Query API for each
-for cid in $CONV_IDS; do
-  curl -s "https://app.all-hands.dev/api/v1/app-conversations/search?limit=50" \
-    -H "Authorization: Bearer ${OH_API_KEY}" \
-  | jq -r ".items[] | select(.id | startswith(\"$cid\")) | \"\(.id[0:7]) \(.execution_status)\""
-done
+# Example output: {"expansion": 2, "implementation": 1, "review": 0}
+# Means: can spawn 2 more expansion, 1 impl, 0 review (both full)
 ```
 
 ### Backup Method: ohtv (Optional)
@@ -614,20 +742,23 @@ ohtv list --repo voice-relay --since 4h --idle 15
 
 # See what a conversation referenced (issues, PRs)
 ohtv refs CONV_ID
-
-# Generate object references (requires LLM)
-ohtv gen objs -D
 ```
 
 ### Decision Rules
 
-**For Expansion Slot:**
-- Only spawn if no `expansion` type worker shows `running` status
+**For Expansion Slots (max 4):**
+- Spawn up to `EXPANSION_AVAILABLE` workers for issues needing expansion
+- Each targets a different issue (oldest first)
 
-**For PR Slot:**
-- Only spawn if no `implementation`, `review`, or `merge` type worker shows `running` status
+**For Implementation Slot (max 1):**
+- Only spawn if `IMPL_AVAILABLE = 1` 
+- Targets highest priority ready issue
 
-**Both slots can be filled simultaneously** - an expansion worker and a PR worker can run in parallel.
+**For Review Slots (max 2):**
+- Spawn up to `REVIEW_AVAILABLE` workers for PRs needing review
+- Each targets a different PR
+
+**All slot types run independently** - expansion, implementation, and review workers can all run in parallel.
 
 ## Production Deployment Context
 
