@@ -971,11 +971,18 @@ After each orchestrator run, append a status update to `WORKLOG.md` in the repo 
 2. **Worker tracking** - conversation IDs and what they're doing
 3. **Human visibility** - anyone can see what's happening
 
-> ⚠️ **CRITICAL: WORKLOG.md changes ALWAYS go directly to main branch.**
-> 
-> Never include WORKLOG.md changes in feature branches or PRs. When updating
-> the worklog, checkout main, make the change, commit, and push to main directly.
-> This keeps the worklog as a clean, linear record of workflow activity.
+> ⚠️ **CRITICAL: State files ALWAYS live on main branch.**
+>
+> Both `.workflow-state.json` and `WORKLOG.md` must be read from and written to
+> the **main branch only**. Never include these files in feature branches or PRs.
+>
+> When updating state:
+> 1. Checkout main: `git checkout main && git pull origin main`
+> 2. Update `.workflow-state.json` and/or `WORKLOG.md`
+> 3. Commit and push directly to main: `git commit -am "..." && git push origin main`
+>
+> This ensures all orchestrator runs see consistent state, regardless of which
+> feature branches exist or what PRs are open.
 
 ### Standard Log Entry Format
 
