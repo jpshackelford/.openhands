@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "slots": {
+    "expansion": [],
+    "implementation": [],
+    "review": []
+  },
+  "limits": {
+    "expansion": 4,
+    "implementation": 1,
+    "review": 2
+  },
+  "last_updated": null
+}
