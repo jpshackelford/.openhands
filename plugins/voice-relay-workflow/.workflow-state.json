@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "slots": {
     "expansion": [],
     "implementation": [],
@@ -10,5 +10,6 @@
     "implementation": 1,
     "review": 2
   },
+  "completed": [],
   "last_updated": null
 }

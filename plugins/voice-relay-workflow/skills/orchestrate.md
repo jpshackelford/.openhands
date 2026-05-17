@@ -291,11 +291,11 @@ Load `.workflow-state.json` and verify which workers are still running via API.
 
 ### State File Structure
 
-The orchestrator uses `.workflow-state.json` to track active conversations:
+The orchestrator uses `.workflow-state.json` to track active and completed conversations:
 
 ```json
 {
-  "version": 1,
+  "version": 2,
   "slots": {
     "expansion": [
       {"conv_id": "abc1234", "issue": 9, "started": "2025-05-17T18:00:00Z"}
@@ -312,17 +312,50 @@ The orchestrator uses `.workflow-state.json` to track active conversations:
     "implementation": 1,
     "review": 2
   },
+  "completed": [
+    {
+      "conv_id": "xyz7890",
+      "type": "expansion",
+      "issue": 8,
+      "started": "2025-05-17T16:00:00Z",
+      "finished": "2025-05-17T16:25:00Z",
+      "status": "success",
+      "outcome": "Added ready label, posted analysis comment"
+    },
+    {
+      "conv_id": "uvw4567",
+      "type": "implementation",
+      "issue": 7,
+      "started": "2025-05-17T14:00:00Z",
+      "finished": "2025-05-17T15:30:00Z",
+      "status": "success",
+      "outcome": "Created PR #45"
+    }
+  ],
   "last_updated": "2025-05-17T18:15:00Z"
 }
 ```
 
+**Schema v2 additions:**
+- `completed[]` - Array of recently completed workers (last 24 hours) for audit trail
+- Each completed entry includes: `type`, `finished`, `status` (success/failed/stuck), `outcome`
+
+**Why track completed workers?**
+- Debug issues when workers are respawned unexpectedly
+- Verify work was actually done (not just slots cleared)
+- Audit trail for orchestrator decisions
+
 ### Load and Validate State
 
 ```bash
-# Load state file (create if missing)
+# Load state file (create if missing, or migrate from v1)
 STATE_FILE=".workflow-state.json"
 if [ ! -f "$STATE_FILE" ]; then
-  echo '{"version":1,"slots":{"expansion":[],"implementation":[],"review":[]},"limits":{"expansion":4,"implementation":1,"review":2},"last_updated":null}' > "$STATE_FILE"
+  echo '{"version":2,"slots":{"expansion":[],"implementation":[],"review":[]},"limits":{"expansion":4,"implementation":1,"review":2},"completed":[],"last_updated":null}' > "$STATE_FILE"
+elif [ "$(jq -r '.version' "$STATE_FILE")" = "1" ]; then
+  # Migrate v1 to v2: add completed array
+  jq '. + {version: 2, completed: []}' "$STATE_FILE" > "$STATE_FILE.tmp" && mv "$STATE_FILE.tmp" "$STATE_FILE"
+  echo "Migrated .workflow-state.json from v1 to v2"
 fi
 
 # Parse current slots
@@ -355,19 +388,22 @@ check_conv_status() {
 - `finished` = worker completed, remove from state
 - `error` / `stuck` = worker failed (may need attention)
 
-### Update State - Remove Finished Workers
+### Update State - Move Finished Workers to Completed
+
+When workers finish, move them to the `completed` array (not just remove them). This creates an audit trail.
 
 ```python
 #!/usr/bin/env python3
 import json
 import subprocess
 import os
+from datetime import datetime, timezone, timedelta
 
 STATE_FILE = ".workflow-state.json"
 OH_API_KEY = os.environ.get("OH_API_KEY")
 
 def check_conv_status(conv_id):
-    """Query API for conversation status."""
+    """Query API for conversation status and title."""
     result = subprocess.run([
         "curl", "-s", 
         f"https://app.all-hands.dev/api/v1/app-conversations/search?limit=50",
@@ -378,31 +414,77 @@ def check_conv_status(conv_id):
         data = json.loads(result.stdout)
         for item in data.get("items", []):
             if item["id"].startswith(conv_id):
-                return item.get("execution_status", "unknown")
+                return {
+                    "status": item.get("execution_status", "unknown"),
+                    "title": item.get("title", ""),
+                }
     except:
         pass
-    return "unknown"
+    return {"status": "unknown", "title": ""}
+
+def infer_outcome(slot_type, conv_info):
+    """Infer what the worker accomplished based on type and title."""
+    title = conv_info.get("title", "")
+    if slot_type == "expansion":
+        return "Added ready label, posted analysis comment"
+    elif slot_type == "implementation":
+        if "PR #" in title:
+            return title
+        return "Created PR (check GitHub for details)"
+    elif slot_type == "review":
+        return "Addressed review feedback"
+    return "Completed"
 
 def update_state():
-    """Remove finished workers from state."""
+    """Move finished workers from slots to completed array."""
     with open(STATE_FILE, 'r') as f:
         state = json.load(f)
     
+    # Ensure v2 schema
+    if "completed" not in state:
+        state["completed"] = []
+    
+    now = datetime.now(timezone.utc)
     updated = False
+    
     for slot_type in ["expansion", "implementation", "review"]:
         active = []
         for worker in state["slots"][slot_type]:
-            status = check_conv_status(worker["conv_id"])
+            conv_info = check_conv_status(worker["conv_id"])
+            status = conv_info["status"]
+            
             if status == "running":
                 active.append(worker)
             else:
-                print(f"✓ {slot_type} worker {worker['conv_id']} finished")
+                # Move to completed array with full details
+                completed_entry = {
+                    "conv_id": worker["conv_id"],
+                    "type": slot_type,
+                    "issue": worker.get("issue"),
+                    "pr": worker.get("pr"),
+                    "started": worker["started"],
+                    "finished": now.isoformat(),
+                    "status": "success" if status == "finished" else status,
+                    "outcome": infer_outcome(slot_type, conv_info)
+                }
+                # Remove None values
+                completed_entry = {k: v for k, v in completed_entry.items() if v is not None}
+                state["completed"].append(completed_entry)
+                print(f"✓ {slot_type} worker {worker['conv_id']} → completed ({status})")
                 updated = True
+        
         state["slots"][slot_type] = active
     
-    if updated:
-        from datetime import datetime, timezone
-        state["last_updated"] = datetime.now(timezone.utc).isoformat()
+    # Prune completed entries older than 24 hours
+    cutoff = now - timedelta(hours=24)
+    state["completed"] = [
+        c for c in state["completed"]
+        if datetime.fromisoformat(c["finished"].replace("Z", "+00:00")) > cutoff
+    ]
+    
+    if updated or state.get("version") != 2:
+        state["version"] = 2
+        state["last_updated"] = now.isoformat()
         with open(STATE_FILE, 'w') as f:
             json.dump(state, f, indent=2)
     
@@ -412,6 +494,7 @@ state = update_state()
 print(f"Active: expansion={len(state['slots']['expansion'])}, "
       f"impl={len(state['slots']['implementation'])}, "
       f"review={len(state['slots']['review'])}")
+print(f"Recently completed: {len(state['completed'])} workers (last 24h)")
 ```
 
 ### Determine Available Slots
