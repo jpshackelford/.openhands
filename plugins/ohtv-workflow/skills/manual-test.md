@@ -283,9 +283,46 @@ All **835 unit tests pass** ✅
 **Summary**: All functionality works as documented in the PR description.
 ```
 
+## What Counts as a Valid Manual Test
+
+Manual testing means **blackbox testing through the CLI** - treating the tool as users would. You MUST test through the command-line interface, not by importing Python functions.
+
+### ✅ VALID - Tests user-facing CLI interface:
+```bash
+# These are valid tests - they use the CLI like a real user
+uv run ohtv list -A --label "key=value"
+uv run ohtv show abc1234 --summary
+uv run ohtv gen objs -n 10 -F json
+uv run ohtv search "error handling" --limit 5
+```
+
+### ❌ INVALID - Tests internal implementation:
+```python
+# DO NOT DO THIS - testing internal functions is NOT manual testing
+from ohtv.cli import _filter_by_label
+result = _filter_by_label(conversations, "key=value")
+
+# DO NOT DO THIS - calling functions directly bypasses the user interface
+from ohtv.transcript import extract_action_summary
+extract_action_summary(event_with_summary, include_command=True)
+
+# DO NOT DO THIS - Python interpreter tests are NOT manual tests
+python -c "from ohtv.store import ConversationStore; store.list_by_label('foo=bar')"
+```
+
+**Rule of thumb:** If a user can't type it in their terminal, it's not a valid manual test. Internal function testing belongs in pytest unit tests, not manual test reports.
+
+### Why This Matters
+
+1. **Unit tests already cover internals** - pytest tests the functions; manual tests verify the user experience
+2. **CLI is the contract** - Users interact via CLI; we need to verify that interface works
+3. **Integration matters** - CLI testing catches argument parsing, output formatting, and error handling that function-level tests miss
+4. **Reproducibility** - Other humans can copy/paste CLI commands to verify; they can't easily reproduce Python interpreter sessions
+
 ## What Makes a Good Test Report
 
 ✅ **DO:**
+- Test ONLY through CLI commands (`uv run ohtv ...`)
 - Test real functionality, not just "it runs"
 - Include actual command output (not paraphrased)
 - Document edge cases tested
@@ -294,6 +331,10 @@ All **835 unit tests pass** ✅
 - Run and report unit test results
 
 ❌ **DON'T:**
+- **Test internal functions via Python interpreter** (e.g., `extract_action_summary(event)`)
+- **Use `python -c "from X import Y; Y(...)"` patterns** - that's what unit tests are for
+- **Import and call Python functions directly** - test ONLY through CLI commands
+- **Bypass the CLI** to test "faster" - if users can't do it, don't test it that way
 - Skip error case testing
 - Fabricate output that wasn't actually run
 - Post vague "it works" statements
