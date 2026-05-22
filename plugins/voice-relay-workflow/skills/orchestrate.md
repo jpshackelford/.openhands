@@ -1165,22 +1165,21 @@ Update status when checking workers:
 
 ### When No Action Needed
 
-```markdown
-### 2025-05-05 15:30 UTC - Orchestrator
+**🛑 DO NOT commit a WORKLOG entry.**
 
-**Active Workers:**
-| Conv ID | Type | Working On | Status |
-|---------|------|------------|--------|
-| `def5678` | implementation | Issue #9 | running |
+If this tick took no productive action (no worker spawned, no PR merged, no human instruction followed, no review addressed), **do not write to `WORKLOG.md` or `.workflow-state.json`**. Heartbeats belong in logs, not in source history.
 
-✅ **All quiet** - PR slot occupied, expansion slot empty (nothing to expand)
+Instead:
 
-- [PR #6](https://github.com/jpshackelford/voice-relay/pull/6) in progress
-- All issues expanded
-- Next check in ~30 minutes
+1. **Log to stdout** in the standard format from the [Logging](#logging) section.
+2. **Increment the quiet-tick counter** in memory (see [Auto-Disable](#auto-disable-on-consecutive-quiet-periods) below). The counter lives in `.workflow-state.json` field `quiet_ticks` — but only **commit the state change when the counter resets to 0** (productive tick), or when the auto-disable threshold is reached (final state write before turning off).
+3. **Exit cleanly.**
 
----
-```
+This rule applies to **both** cron-triggered ticks and manual `/orchestrate` invocations. A human running `/orchestrate` against an idle backlog must not produce repo commits.
+
+#### Why
+
+Between 2026-05-22 03:38Z and 11:30Z the orchestrator emitted **18 consecutive `chore: worklog update — Nth consecutive blocked /orchestrate`** commits to `main` while PR #272 was halted on `needs-human` (see jpshackelford/voice-relay#272 and jpshackelford/.openhands#22). Each commit widened the divergence from every open feature branch and produced no useful signal a human couldn't already see from the PR status itself.
 
 ### When All Issues Closed
 
@@ -1203,49 +1202,64 @@ All tracked issues have been implemented and closed.
 
 ## Auto-Disable on Consecutive Quiet Periods
 
-**CRITICAL:** Before logging a "quiet" entry, check if WORKLOG.md already shows two consecutive quiet entries. If so, disable the automation instead of running indefinitely.
+**CRITICAL:** If two consecutive ticks take no productive action, disable the automation.
+
+The trigger is now **state-counter based**, not WORKLOG.md grep. Because the [When No Action Needed](#when-no-action-needed) rule prohibits emitting WORKLOG entries on quiet ticks, the prior "grep for `All quiet`" detection is obsolete and will never fire.
 
 ### Automation ID
 
-This orchestrator's automation ID is:
-```
-a0219382-2e7c-4156-9991-7b9976739a66
+Read from the environment variable `ORCHESTRATOR_AUTOMATION_ID`. The deployed v2 orchestrator uses `5f180989-ed9c-42b4-ac9f-5f30f0623316`; do not hardcode this — the v1 ID (`a0219382-2e7c-4156-9991-7b9976739a66`) referenced in earlier revisions of this skill is stale and points at the wrong automation, which is why the 2026-05-22 livelock never self-resolved.
+
+```bash
+AUTOMATION_ID="${ORCHESTRATOR_AUTOMATION_ID:-5f180989-ed9c-42b4-ac9f-5f30f0623316}"
 ```
 
 ### Detection Logic
 
-Check WORKLOG.md for consecutive quiet entries:
+The quiet-tick counter lives in `.workflow-state.json`:
 
-```bash
-# Extract last few orchestrator entries and check for consecutive "All quiet" patterns
-# Look for entries that contain both the Orchestrator header and "All quiet"
-QUIET_COUNT=$(tail -100 WORKLOG.md | grep -B2 "All quiet" | grep -c "Orchestrator" || echo 0)
-
-# If 2 or more consecutive quiet entries exist, this would be the 3rd - disable instead
-if [ "$QUIET_COUNT" -ge 2 ]; then
-  echo "Two consecutive quiet periods detected - disabling automation"
-fi
+```json
+{
+  "version": 2,
+  "slots": { … },
+  "limits": { … },
+  "completed": [ … ],
+  "quiet_ticks": 0,
+  "last_updated": "…"
+}
 ```
 
-Alternative check using the most recent entries:
+At the end of every tick:
+
+1. **Productive tick** (spawned, merged, addressed, followed instruction) → `quiet_ticks = 0`, commit state.
+2. **Quiet tick** (no action) → `quiet_ticks += 1`.
+   - If `quiet_ticks >= 2`: **disable the automation**, commit final state, exit.
+   - If `quiet_ticks < 2`: do NOT commit state (see [When No Action Needed](#when-no-action-needed)).
 
 ```bash
-# Get the last 2 orchestrator log entries
-LAST_ENTRIES=$(grep -E "(^### .*Orchestrator|All quiet)" WORKLOG.md | tail -4)
+QUIET=$(jq -r '.quiet_ticks // 0' .workflow-state.json)
 
-# Check if both recent orchestrator entries were quiet
-if echo "$LAST_ENTRIES" | grep -q "All quiet" && \
-   [ $(echo "$LAST_ENTRIES" | grep -c "All quiet") -ge 2 ]; then
-  echo "Auto-disable triggered: two consecutive quiet periods"
+if [ "$THIS_TICK_PRODUCTIVE" = "true" ]; then
+  jq '.quiet_ticks = 0 | .last_updated = now | todate' .workflow-state.json > .workflow-state.json.tmp \
+    && mv .workflow-state.json.tmp .workflow-state.json
+  # commit and push
+else
+  NEW=$((QUIET + 1))
+  if [ "$NEW" -ge 2 ]; then
+    # disable + persist + exit (see "How to Disable" below)
+    echo "Auto-disable triggered: $NEW consecutive quiet ticks"
+  else
+    # increment in-memory only; do NOT commit
+    echo "Quiet tick $NEW of 2 — no commit"
+  fi
 fi
 ```
 
 ### How to Disable
 
-When two consecutive quiet periods are detected:
-
 ```bash
-curl -X PATCH "https://app.all-hands.dev/api/automation/v1/a0219382-2e7c-4156-9991-7b9976739a66" \
+AUTOMATION_ID="${ORCHESTRATOR_AUTOMATION_ID:-5f180989-ed9c-42b4-ac9f-5f30f0623316}"
+curl -X PATCH "https://app.all-hands.dev/api/automation/v1/${AUTOMATION_ID}" \
   -H "Authorization: Bearer ${OPENHANDS_API_KEY}" \
   -H "Content-Type: application/json" \
   -d '{"enabled": false}'
@@ -1363,7 +1377,9 @@ Do NOT:
 ## Cron Schedule
 
 ```
-*/30 * * * *  # Every 30 minutes
+*/15 * * * *  # Every 15 minutes (America/New_York)
 ```
 
-Adjust based on expected review turnaround time.
+This is the actual deployed cadence (verified against the v2 automation on 2026-05-22). Earlier revisions of this doc said `*/30`; that's stale.
+
+Adjust based on expected review turnaround time — but bear in mind that more frequent ticks compound any heartbeat commits, so the [When No Action Needed](#when-no-action-needed) rule (no repo writes on quiet ticks) is the primary defense against tick-cadence noise.
