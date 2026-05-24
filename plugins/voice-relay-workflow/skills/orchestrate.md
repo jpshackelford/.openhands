@@ -859,6 +859,67 @@ ohtv refs CONV_ID
 4. Additive changes are safe (new tables, new columns with defaults)
 5. Destructive changes require careful planning (column renames, type changes, deletions)
 
+## Scope Contract
+
+**Every worker brief MUST declare a scope.** The scope binds the worker to a set of allowed path globs; the merge worker refuses to merge any PR whose diff falls outside its declared scope.
+
+### Vocabulary
+
+| Scope label | Allowed paths | Forbidden examples |
+|---|---|---|
+| `scope:client-only` | `client/**` | `server/**`, `db/**`, migrations |
+| `scope:server-only` | `server/**` | `client/**`, kiosk UI |
+| `scope:ci-only` | `.github/**`, `.gitignore`, top-level config files | source code, tests |
+| `scope:docs-only` | `*.md`, `docs/**`, `WORKLOG.md` _(main only, see governance rule)_ | source code, CI, schema |
+| `scope:full-stack` | any path | _none — but reserve for issues that explicitly call for cross-cutting work_ |
+
+The label is applied **at PR open time** by the implementation worker (it knows its own scope from the brief) and **verified at merge time** by the merge worker against the actual diff.
+
+### Why
+
+When [voice-relay#272](https://github.com/jpshackelford/voice-relay/pull/272) was briefed, the issue's expansion comment focused on the client-side ActionEvent + ObservationEvent pairing. The implementation worker decided unilaterally that a related server-side event-filter would be a useful improvement and bundled it into the same PR. The merge worker correctly halted on `needs-human` — the change was real, but the brief said client-only. The fix on 2026-05-22 was to split the server filter into [voice-relay#277](https://github.com/jpshackelford/voice-relay/pull/277) **after** #272 merged, which is exactly the workflow the scope contract is meant to codify.
+
+**Rule of thumb:** when in doubt, narrower scope wins. If a worker discovers that the briefed change requires touching paths outside its scope, the worker MUST:
+
+1. Implement only the in-scope portion.
+2. Save the out-of-scope work as a patch file (`git diff -- path/glob > /tmp/followup.patch`).
+3. Open the PR with the narrowed diff, note the followup in the PR body.
+4. Open a follow-up issue (or PR if trivial) for the out-of-scope work with a clear scope label of its own.
+
+This pattern is what got voice-relay#272, #277, and #278 cleanly through after the 2026-05-22 livelock — see jpshackelford/.openhands#23 for the broader rationale.
+
+### Merge-time enforcement
+
+The merge worker runs this check before squashing — it's a HARD GATE in the [Merge Worker](#merge-worker) brief, step 3. If the check fails, the merge worker adds `needs-human` and halts without merging.
+
+```bash
+SCOPE=$(gh pr view "$PR_NUMBER" --repo jpshackelford/voice-relay --json labels \
+  --jq '.labels[].name | select(startswith("scope:"))' | head -1)
+
+case "$SCOPE" in
+  scope:client-only) ALLOWED='^client/' ;;
+  scope:server-only) ALLOWED='^server/' ;;
+  scope:ci-only)     ALLOWED='^\.github/|^\.gitignore$|^(package\.json|tsconfig\.json|README\.md)$' ;;
+  scope:docs-only)   ALLOWED='\.md$|^docs/' ;;
+  scope:full-stack)  ALLOWED='.*' ;;
+  *)
+    echo "::error::PR #$PR_NUMBER has no scope: label — refusing to merge. Apply one of scope:client-only / scope:server-only / scope:ci-only / scope:docs-only / scope:full-stack."
+    exit 1
+    ;;
+esac
+
+OUT_OF_SCOPE=$(gh pr diff "$PR_NUMBER" --repo jpshackelford/voice-relay --name-only \
+  | grep -Ev "$ALLOWED" || true)
+
+if [ -n "$OUT_OF_SCOPE" ]; then
+  echo "::error::PR #$PR_NUMBER scope is $SCOPE but diff includes paths outside its scope:"
+  printf '  %s\n' $OUT_OF_SCOPE
+  echo
+  echo "Either split these paths into a follow-up PR, or change the scope label."
+  exit 1
+fi
+```
+
 ## Spawning Workers
 
 Use `/spawn-conversation` skill to start worker conversations.
@@ -927,9 +988,20 @@ Prompt: |
   - Issue: #{issue_number} - {issue_title}
   - URL: https://github.com/jpshackelford/voice-relay/issues/{issue_number}
   - Priority: {priority_label}
+  - **Scope: {scope_label}** — paths allowed by this scope are listed in the
+    [Scope Contract](#scope-contract) table. You MUST stay inside them.
   
   This issue has already been expanded with technical detail. Read the issue 
   description AND comments for the implementation approach.
+  
+  **SCOPE DISCIPLINE — HARD RULE:**
+  If you discover that completing the task requires changes outside the
+  declared scope (e.g., a client-only PR that also needs a server-side
+  filter), DO NOT bundle them. Implement only the in-scope portion,
+  save the rest as a patch (`git diff -- 'server/**' > /tmp/followup.patch`),
+  open a follow-up issue, and note the split in this PR's body. The
+  merge worker WILL refuse to merge a PR whose diff escapes its scope
+  label — see voice-relay#272 / #277 for the canonical example.
   
   **PRODUCTION CONTEXT:**
   - App auto-deploys to vr.chorecraft.net on merge to main
@@ -1024,24 +1096,32 @@ Prompt: |
   
   1. Clone the repo and checkout the PR branch
   2. Study the full PR diff holistically - understand what was built
-  3. **MIGRATION CHECK:** If this PR includes database changes:
+  3. **SCOPE CHECK (HARD GATE):** Read the PR's `scope:*` label and verify the
+     diff stays inside its allowed paths. Run the snippet from the
+     [Scope Contract](#scope-contract) section above. If the diff escapes
+     the declared scope OR no `scope:*` label is present:
+     - Apply the `needs-human` label: `gh pr edit {number} --add-label needs-human`
+     - Post a halt comment naming the out-of-scope paths and pointing to the
+       split-into-followup workflow described in the Scope Contract.
+     - Update WORKLOG.md on main with the halt reason, then EXIT. Do not merge.
+  4. **MIGRATION CHECK:** If this PR includes database changes:
      - Verify migration files exist and are correct
      - Confirm migrations are additive/safe for existing data
      - Note any manual steps needed post-deploy
-  4. Read all review history to understand how it evolved
-  5. Update PR description to reflect final state:
+  5. Read all review history to understand how it evolved
+  6. Update PR description to reflect final state:
      - What was implemented
      - Key decisions made during review
      - Any notable technical details
      - **Migration notes** if applicable
-  6. Craft a good conventional commit message for squash-merge:
+  7. Craft a good conventional commit message for squash-merge:
      - feat: / fix: / chore: / refactor: as appropriate
      - Clear summary line
      - Body with relevant details
-  7. Squash and merge: gh pr merge {number} --squash --body "commit message"
-  8. The linked issue will auto-close if PR description has "Fixes #N"
-  9. Verify issue closed; if not, close manually: gh issue close {issue_number}
-  10. Exit
+  8. Squash and merge: gh pr merge {number} --squash --body "commit message"
+  9. The linked issue will auto-close if PR description has "Fixes #N"
+  10. Verify issue closed; if not, close manually: gh issue close {issue_number}
+  11. Exit
 
 Plugins: github:jpshackelford/.openhands/plugins/voice-relay-workflow@add-voice-relay-workflow-plugin
 PR Number: {number}
