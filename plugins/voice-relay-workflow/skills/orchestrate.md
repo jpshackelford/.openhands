@@ -867,13 +867,27 @@ ohtv refs CONV_ID
 
 | Scope label | Allowed paths | Forbidden examples |
 |---|---|---|
-| `scope:client-only` | `client/**` | `server/**`, `db/**`, migrations |
-| `scope:server-only` | `server/**` | `client/**`, kiosk UI |
-| `scope:ci-only` | `.github/**`, `.gitignore`, top-level config files | source code, tests |
+| `scope:client-only` | `client/**` + [companion paths](#companion-paths) | `server/**`, `db/**`, migrations |
+| `scope:server-only` | `server/**` + [companion paths](#companion-paths) | `client/**`, kiosk UI |
+| `scope:ci-only` | `.github/**`, `.gitignore`, top-level config files, `tests/**` | client/server source |
 | `scope:docs-only` | `*.md`, `docs/**`, `WORKLOG.md` _(main only, see governance rule)_ | source code, CI, schema |
 | `scope:full-stack` | any path | _none — but reserve for issues that explicitly call for cross-cutting work_ |
 
 The label is applied **at PR open time** by the implementation worker (it knows its own scope from the brief) and **verified at merge time** by the merge worker against the actual diff.
+
+At most **one** `scope:*` label should be applied per PR. If multiple are present, the merge-time check picks the **most permissive** one (full-stack > client-only/server-only > ci-only > docs-only) so the gate fails closed but not pointlessly.
+
+### Companion paths
+
+The narrow scopes (`scope:client-only`, `scope:server-only`) also allow a small set of **companion paths** that are nearly always mechanical byproducts of an in-scope change. Halting on these produces friction without catching real scope creep:
+
+- **Root lockfiles** — `package-lock.json`, `yarn.lock`, `pnpm-lock.yaml`. Updated automatically when a workspace dep is added/bumped; meaningless to split into a separate PR.
+- **CI workflows** — `.github/workflows/**`. A new client/server feature frequently lands with the CI job that exercises it (coverage gate, new test job). Splitting the workflow into its own PR leaves the gate unenforced for one merge cycle — strictly worse than landing them together.
+- **Smoke / E2E tests** — `tests/**`. Smoke tests live outside `client/` and `server/` but exist to verify in-scope behavior; updating an assertion to track an in-scope change belongs with that change.
+
+The cross-domain gate is what actually catches the voice-relay#272 failure mode: a `scope:client-only` PR still **cannot** touch `server/**`, and vice versa. Companion paths are explicitly enumerated so they can't be used as a wedge to sneak that in.
+
+`scope:docs-only` does **not** get companion paths — a docs PR touching CI or lockfiles is real scope drift and the gate should fire.
 
 ### Why
 
@@ -893,19 +907,31 @@ This pattern is what got voice-relay#272, #277, and #278 cleanly through after t
 The merge worker runs this check before squashing — it's a HARD GATE in the [Merge Worker](#merge-worker) brief, step 3. If the check fails, the merge worker adds `needs-human` and halts without merging.
 
 ```bash
-SCOPE=$(gh pr view "$PR_NUMBER" --repo jpshackelford/voice-relay --json labels \
-  --jq '.labels[].name | select(startswith("scope:"))' | head -1)
+# Gather all scope:* labels and pick the most permissive (full-stack > client/server-only > ci-only > docs-only).
+# Multiple scope labels shouldn't happen, but if they do we fail open on the gate to avoid pointless halts.
+SCOPE_LABELS=$(gh pr view "$PR_NUMBER" --repo jpshackelford/voice-relay --json labels \
+  --jq '.labels[].name | select(startswith("scope:"))')
+
+if   echo "$SCOPE_LABELS" | grep -qx scope:full-stack ; then SCOPE=scope:full-stack
+elif echo "$SCOPE_LABELS" | grep -qx scope:client-only; then SCOPE=scope:client-only
+elif echo "$SCOPE_LABELS" | grep -qx scope:server-only; then SCOPE=scope:server-only
+elif echo "$SCOPE_LABELS" | grep -qx scope:ci-only    ; then SCOPE=scope:ci-only
+elif echo "$SCOPE_LABELS" | grep -qx scope:docs-only  ; then SCOPE=scope:docs-only
+else
+  echo "::error::PR #$PR_NUMBER has no scope: label — refusing to merge. Apply one of scope:client-only / scope:server-only / scope:ci-only / scope:docs-only / scope:full-stack."
+  exit 1
+fi
+
+# Companion paths — always allowed alongside client-only / server-only (see "Companion paths" above).
+# Intentionally excluded from docs-only.
+COMPANION='^(package-lock\.json|yarn\.lock|pnpm-lock\.yaml)$|^\.github/workflows/|^tests/'
 
 case "$SCOPE" in
-  scope:client-only) ALLOWED='^client/' ;;
-  scope:server-only) ALLOWED='^server/' ;;
-  scope:ci-only)     ALLOWED='^\.github/|^\.gitignore$|^(package\.json|tsconfig\.json|README\.md)$' ;;
+  scope:client-only) ALLOWED="^client/|$COMPANION" ;;
+  scope:server-only) ALLOWED="^server/|$COMPANION" ;;
+  scope:ci-only)     ALLOWED='^\.github/|^\.gitignore$|^tests/|^(package\.json|package-lock\.json|tsconfig\.json|README\.md)$' ;;
   scope:docs-only)   ALLOWED='\.md$|^docs/' ;;
   scope:full-stack)  ALLOWED='.*' ;;
-  *)
-    echo "::error::PR #$PR_NUMBER has no scope: label — refusing to merge. Apply one of scope:client-only / scope:server-only / scope:ci-only / scope:docs-only / scope:full-stack."
-    exit 1
-    ;;
 esac
 
 OUT_OF_SCOPE=$(gh pr diff "$PR_NUMBER" --repo jpshackelford/voice-relay --name-only \
@@ -916,6 +942,8 @@ if [ -n "$OUT_OF_SCOPE" ]; then
   printf '  %s\n' $OUT_OF_SCOPE
   echo
   echo "Either split these paths into a follow-up PR, or change the scope label."
+  echo "(Companion paths — lockfiles, .github/workflows/**, tests/** — are already allowed"
+  echo " in client-only / server-only; if the out-of-scope path is one of those, this is a bug.)"
   exit 1
 fi
 ```
