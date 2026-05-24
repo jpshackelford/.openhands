@@ -1165,21 +1165,21 @@ Update status when checking workers:
 
 ### When No Action Needed
 
-**🛑 DO NOT commit a WORKLOG entry.**
+**🛑 DO NOT append a WORKLOG entry.**
 
-If this tick took no productive action (no worker spawned, no PR merged, no human instruction followed, no review addressed), **do not write to `WORKLOG.md` or `.workflow-state.json`**. Heartbeats belong in logs, not in source history.
+If this tick took no productive action (no worker spawned, no PR merged, no human instruction followed, no review addressed), **do not write to `WORKLOG.md`**. Narrative heartbeats belong in logs, not in source history.
 
 Instead:
 
 1. **Log to stdout** in the standard format from the [Logging](#logging) section.
-2. **Increment the quiet-tick counter** in memory (see [Auto-Disable](#auto-disable-on-consecutive-quiet-periods) below). The counter lives in `.workflow-state.json` field `quiet_ticks` — but only **commit the state change when the counter resets to 0** (productive tick), or when the auto-disable threshold is reached (final state write before turning off).
+2. **Increment the quiet-tick counter** in `.workflow-state.json` (see [Auto-Disable](#auto-disable-on-consecutive-quiet-periods) below) and commit just that file. Because each cron tick runs in a fresh sandbox there is no shared in-process state, so the counter MUST be persisted to `main` on every quiet tick — otherwise auto-disable can never accumulate enough ticks to fire. The diff is a single integer field.
 3. **Exit cleanly.**
 
-This rule applies to **both** cron-triggered ticks and manual `/orchestrate` invocations. A human running `/orchestrate` against an idle backlog must not produce repo commits.
+This rule applies to **both** cron-triggered ticks and manual `/orchestrate` invocations. A human running `/orchestrate` against an idle backlog must not append to `WORKLOG.md`.
 
 #### Why
 
-Between 2026-05-22 03:38Z and 11:30Z the orchestrator emitted **18 consecutive `chore: worklog update — Nth consecutive blocked /orchestrate`** commits to `main` while PR #272 was halted on `needs-human` (see jpshackelford/voice-relay#272 and jpshackelford/.openhands#22). Each commit widened the divergence from every open feature branch and produced no useful signal a human couldn't already see from the PR status itself.
+Between 2026-05-22 03:38Z and 11:30Z the orchestrator emitted **18 consecutive `chore: worklog update — Nth consecutive blocked /orchestrate`** commits to `main` while PR #272 was halted on `needs-human` (see jpshackelford/voice-relay#272 and jpshackelford/.openhands#22). Each commit appended a ~60-line WORKLOG entry that widened the divergence from every open feature branch and produced no useful signal a human couldn't already see from the PR status itself. Under the new design, quiet-tick noise is bounded to two one-line `.workflow-state.json` commits before auto-disable fires.
 
 ### When All Issues Closed
 
@@ -1229,31 +1229,37 @@ The quiet-tick counter lives in `.workflow-state.json`:
 }
 ```
 
+Because each cron invocation is a fresh sandbox, the counter MUST be persisted to disk **and** committed to `main` on every tick — there is no shared in-process state between ticks.
+
 At the end of every tick:
 
-1. **Productive tick** (spawned, merged, addressed, followed instruction) → `quiet_ticks = 0`, commit state.
-2. **Quiet tick** (no action) → `quiet_ticks += 1`.
-   - If `quiet_ticks >= 2`: **disable the automation**, commit final state, exit.
-   - If `quiet_ticks < 2`: do NOT commit state (see [When No Action Needed](#when-no-action-needed)).
+1. **Productive tick** (spawned, merged, addressed, followed instruction) → `quiet_ticks = 0`, commit state alongside the WORKLOG entry.
+2. **Quiet tick** (no action) → `quiet_ticks += 1`, commit `.workflow-state.json` only (no WORKLOG entry — see [When No Action Needed](#when-no-action-needed)).
+   - If the new value `>= 2`: **disable the automation**, then commit final state, exit.
+   - Otherwise: commit the incremented state and exit.
 
 ```bash
 QUIET=$(jq -r '.quiet_ticks // 0' .workflow-state.json)
 
 if [ "$THIS_TICK_PRODUCTIVE" = "true" ]; then
-  jq '.quiet_ticks = 0 | .last_updated = now | todate' .workflow-state.json > .workflow-state.json.tmp \
+  jq '.quiet_ticks = 0 | .last_updated = (now | todate)' .workflow-state.json > .workflow-state.json.tmp \
     && mv .workflow-state.json.tmp .workflow-state.json
-  # commit and push
+  # commit .workflow-state.json alongside the productive WORKLOG entry, then push
 else
   NEW=$((QUIET + 1))
+  jq --argjson n "$NEW" '.quiet_ticks = $n | .last_updated = (now | todate)' .workflow-state.json > .workflow-state.json.tmp \
+    && mv .workflow-state.json.tmp .workflow-state.json
   if [ "$NEW" -ge 2 ]; then
     # disable + persist + exit (see "How to Disable" below)
     echo "Auto-disable triggered: $NEW consecutive quiet ticks"
   else
-    # increment in-memory only; do NOT commit
-    echo "Quiet tick $NEW of 2 — no commit"
+    echo "Quiet tick $NEW of 2 — state-only commit"
   fi
+  # commit .workflow-state.json (NO WORKLOG entry) and push
 fi
 ```
+
+> **jq note:** the parenthesization in `.last_updated = (now | todate)` is load-bearing. Without the parens, `=` binds tighter than `|` and the expression parses as `(.last_updated = now) | todate`, which pipes the whole object through `todate` and errors out.
 
 ### How to Disable
 
@@ -1377,9 +1383,9 @@ Do NOT:
 ## Cron Schedule
 
 ```
-*/15 * * * *  # Every 15 minutes (America/New_York)
+*/15 * * * *  # Every 15 minutes (runner TZ — currently America/New_York)
 ```
 
 This is the actual deployed cadence (verified against the v2 automation on 2026-05-22). Earlier revisions of this doc said `*/30`; that's stale.
 
-Adjust based on expected review turnaround time — but bear in mind that more frequent ticks compound any heartbeat commits, so the [When No Action Needed](#when-no-action-needed) rule (no repo writes on quiet ticks) is the primary defense against tick-cadence noise.
+Adjust based on expected review turnaround time — but bear in mind that more frequent ticks compound any heartbeat commits, so the [When No Action Needed](#when-no-action-needed) rule (no `WORKLOG.md` writes on quiet ticks; only a single-field `.workflow-state.json` update) is the primary defense against tick-cadence noise.
