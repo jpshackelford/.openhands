@@ -1310,7 +1310,23 @@ See [Disable Automation Skill](disable-automation.md) for complete details.
 
 ### Committing WORKLOG.md Updates
 
-**IMPORTANT:** WORKLOG.md updates MUST go to `main`, not to any feature branch.
+**🔒 HARD RULE: `WORKLOG.md` and `.workflow-state.json` may only be modified on `main`. Never push them on a feature branch.**
+
+This rule is **mechanically enforced** by the `Branch Hygiene` GitHub Actions check in `jpshackelford/voice-relay` (see [voice-relay PR #278](https://github.com/jpshackelford/voice-relay/pull/278)). Any PR whose diff touches either file will fail CI with a fix-it message and cannot merge.
+
+**This applies to every actor in the workflow:**
+
+- The orchestrator itself (this skill).
+- Spawned workers — implementation, expansion, review, merge. Workers must not log their own spawn or progress to `WORKLOG.md` from inside a feature branch.
+- Humans running `/orchestrate` or any plugin command manually.
+
+#### Why this rule exists
+
+A feature branch cut at time `T` carries the `WORKLOG.md` snapshot from `T`. By the time the PR is ready to merge, `main` has moved on — additional orchestrator entries, completed worker rows, archive promotions. A squash-merge then **silently reverts** all of those.
+
+This is exactly what nearly happened to [voice-relay#272](https://github.com/jpshackelford/voice-relay/pull/272) on 2026-05-22: the branch carried two stale WORKLOG/state commits that would have reverted 63 lines and rolled the orchestrator state back ~14 minutes. The merge worker correctly halted with `needs-human`, but there was no mechanical guard to prevent the toxic branch from existing in the first place. The CI guard from voice-relay PR #278 is that guard.
+
+#### The mechanics — always stash, switch, commit, return
 
 ```bash
 # Save current branch (if on one)
