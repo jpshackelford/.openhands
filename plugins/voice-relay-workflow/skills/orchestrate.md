@@ -890,10 +890,10 @@ This pattern is what got voice-relay#272, #277, and #278 cleanly through after t
 
 ### Merge-time enforcement
 
-The merge worker (see [prepare-and-merge.md](prepare-and-merge.md)) runs this check before squashing:
+The merge worker runs this check before squashing — it's a HARD GATE in the [Merge Worker](#merge-worker) brief, step 3. If the check fails, the merge worker adds `needs-human` and halts without merging.
 
 ```bash
-SCOPE=$(gh pr view "$PR_NUMBER" --repo "$REPO" --json labels \
+SCOPE=$(gh pr view "$PR_NUMBER" --repo jpshackelford/voice-relay --json labels \
   --jq '.labels[].name | select(startswith("scope:"))' | head -1)
 
 case "$SCOPE" in
@@ -903,12 +903,12 @@ case "$SCOPE" in
   scope:docs-only)   ALLOWED='\.md$|^docs/' ;;
   scope:full-stack)  ALLOWED='.*' ;;
   *)
-    echo "::error::PR has no scope: label — refusing to merge. Apply one of scope:client-only / scope:server-only / scope:ci-only / scope:docs-only / scope:full-stack."
+    echo "::error::PR #$PR_NUMBER has no scope: label — refusing to merge. Apply one of scope:client-only / scope:server-only / scope:ci-only / scope:docs-only / scope:full-stack."
     exit 1
     ;;
 esac
 
-OUT_OF_SCOPE=$(gh pr diff "$PR_NUMBER" --repo "$REPO" --name-only \
+OUT_OF_SCOPE=$(gh pr diff "$PR_NUMBER" --repo jpshackelford/voice-relay --name-only \
   | grep -Ev "$ALLOWED" || true)
 
 if [ -n "$OUT_OF_SCOPE" ]; then
@@ -919,8 +919,6 @@ if [ -n "$OUT_OF_SCOPE" ]; then
   exit 1
 fi
 ```
-
-If the check fails, the merge worker adds the `needs-human` label and exits with the standard halt message.
 
 ## Spawning Workers
 
@@ -1098,24 +1096,32 @@ Prompt: |
   
   1. Clone the repo and checkout the PR branch
   2. Study the full PR diff holistically - understand what was built
-  3. **MIGRATION CHECK:** If this PR includes database changes:
+  3. **SCOPE CHECK (HARD GATE):** Read the PR's `scope:*` label and verify the
+     diff stays inside its allowed paths. Run the snippet from the
+     [Scope Contract](#scope-contract) section above. If the diff escapes
+     the declared scope OR no `scope:*` label is present:
+     - Apply the `needs-human` label: `gh pr edit {number} --add-label needs-human`
+     - Post a halt comment naming the out-of-scope paths and pointing to the
+       split-into-followup workflow described in the Scope Contract.
+     - Update WORKLOG.md on main with the halt reason, then EXIT. Do not merge.
+  4. **MIGRATION CHECK:** If this PR includes database changes:
      - Verify migration files exist and are correct
      - Confirm migrations are additive/safe for existing data
      - Note any manual steps needed post-deploy
-  4. Read all review history to understand how it evolved
-  5. Update PR description to reflect final state:
+  5. Read all review history to understand how it evolved
+  6. Update PR description to reflect final state:
      - What was implemented
      - Key decisions made during review
      - Any notable technical details
      - **Migration notes** if applicable
-  6. Craft a good conventional commit message for squash-merge:
+  7. Craft a good conventional commit message for squash-merge:
      - feat: / fix: / chore: / refactor: as appropriate
      - Clear summary line
      - Body with relevant details
-  7. Squash and merge: gh pr merge {number} --squash --body "commit message"
-  8. The linked issue will auto-close if PR description has "Fixes #N"
-  9. Verify issue closed; if not, close manually: gh issue close {issue_number}
-  10. Exit
+  8. Squash and merge: gh pr merge {number} --squash --body "commit message"
+  9. The linked issue will auto-close if PR description has "Fixes #N"
+  10. Verify issue closed; if not, close manually: gh issue close {issue_number}
+  11. Exit
 
 Plugins: github:jpshackelford/.openhands/plugins/voice-relay-workflow@add-voice-relay-workflow-plugin
 PR Number: {number}
