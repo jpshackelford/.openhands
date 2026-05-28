@@ -394,6 +394,22 @@ All **837 unit tests pass** ✅ (2 new tests added)
 4. **Regression check** - Explicitly note previous tests still pass
 5. **Focus on changes** - Don't repeat all original tests, focus on what changed
 
+## Supply-Chain and Dependency Notes
+
+You may have skills auto-loaded into context that mention dependency-freshness rules — for example, the public `code-review` skill's "do not approve a dependency target version published less than 7 days ago" check. Apply such rules to ohtv only in this narrow scope:
+
+- **In scope:** A PR adds or bumps a **runtime / production dependency** — an entry in `[project] dependencies` in `pyproject.toml`, i.e. a package that ships to end users of `ohtv`.
+- **Out of scope:** Changes to **dev, test, docs, or build-only dependencies** — anything under `[dependency-groups]` (`dev`, `test`, `docs`, …) or `[project.optional-dependencies]` consumed only by contributors / CI. Examples: `pytest`, `pytest-cov`, `hypothesis`, `ruff`, `mypy`, `coverage`. These never reach end users; supply-chain freshness rules from upstream skills do not gate them.
+
+When in doubt, check where the dependency is declared in `pyproject.toml`. If it is **not** in `[project] dependencies`, treat any supply-chain freshness concern as **advisory only**:
+
+- You **may** note it in the test report under a clearly-labeled "Advisory" or "Notes" section
+- Do **not** mark the overall verdict ⚠️ or ❌ on those grounds alone
+- Do **not** write phrases like "BLOCKER per policy" — there is no such project policy for non-runtime deps
+- Do **not** request a human waiver to advance the PR
+
+Code defects, failing unit tests, broken docs, or CLI/UX bugs are still real blockers regardless of which dependency tier the PR touches.
+
 ## After Posting
 
 Once the test report is posted:
