@@ -277,6 +277,18 @@ The ohtv workflow uses **two parallel slots** and ensures **documentation is upd
 | No open PR + ready issues, no priority | Run `/assess-priority` inline, then spawn impl worker |
 | No open PR + no ready issues | Nothing to implement (wait for expansion) |
 
+### PR Forward-Motion Rule (anti-stall)
+
+The PR-slot table above is **exhaustive** for ohtv. If a PR matches a row, dispatch that worker on the next eligible cycle. Do **not** defer a PR based on advisory notes — including supply-chain or dependency-freshness notes surfaced by a previous worker — unless one of the following codified gates is in place:
+
+- An open `## INSTRUCTION:` block in `WORKLOG.md` that explicitly defers the PR
+- A `hold` label on the PR or its tracking issue
+- A documented policy in `AGENTS.md` or in this plugin's skill files
+
+If a previous testing-worker comment or earlier WORKLOG.md entry references a "policy gate" that is not codified in one of those three places, treat it as out of scope. Proceed with the next worker per the decision table and briefly note the override in the current cycle's WORKLOG.md entry.
+
+**Scope of supply-chain rules:** Dependency-freshness concerns, if surfaced from any source (including the public `code-review` skill's 7-day rule), apply only to **runtime / production dependencies** — i.e. entries in `[project] dependencies` in `pyproject.toml`. Changes touching only dev, test, docs, or build dependency groups (`[dependency-groups]`, `[project.optional-dependencies]`) are not gated by such rules. See `manual-test.md` → *Supply-Chain and Dependency Notes* for the full scope.
+
 ### Combined Decision Flow
 
 ```
