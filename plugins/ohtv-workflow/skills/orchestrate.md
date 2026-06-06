@@ -906,6 +906,12 @@ ed08056a-b8d8-41ac-adb3-1d8d105e0cef
 
 If the automation is recreated and this ID becomes stale, the disable-automation skill falls back to lookup-by-name using `?name=OHTV+Workflow+Orchestrator`.
 
+#### 🚨 Do NOT use any other ID
+
+`WORKLOG.md` history contains many references to a previous, archived automation ID `c202ca20-60d5-4f5b-9d53-3d7308c1d95b` (name suffix `(feature branch, disabled)`). **PATCHing that ID is a no-op — the live `ed08056a…` automation will keep firing.**
+
+When you decide to disable, follow the pre-disable verification snippet in `disable-automation.md` (GET the automation first, assert `name == "OHTV Workflow Orchestrator"` exactly — not `"…(feature branch, disabled)"` — and assert `enabled == true`). The only trusted source for the ID is this skill file (or `disable-automation.md`). Never copy an ID out of `WORKLOG.md` history.
+
 ### Detection Logic
 
 Read the last two status markers in WORKLOG.md (in order). If both are `quiet`, auto-disable instead of logging a third quiet entry:
