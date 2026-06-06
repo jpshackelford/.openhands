@@ -31,6 +31,49 @@ Before using this skill, verify merge criteria is met:
 
 ## Steps
 
+### 0. Closing-Trailer AC Gate (REQUIRED, BLOCKS MERGE)
+
+This is the **last line of defense** for the Closing-Trailer Acceptance-Criteria Gate (defined in the plugin's `SKILL.md`). The implementation and review workers should have already converged on the right trailer + follow-ups, but the merge worker MUST verify one more time — review feedback and CI fixes between the last review round and now can flip the verdict.
+
+```bash
+# 1. Extract auto-close trailers from the PR body.
+gh pr view PR_NUMBER --repo jpshackelford/voice-relay --json body -q '.body' \
+  | grep -ioE '(fixes|closes|resolves) #[0-9]+' || echo "NO_AUTOCLOSE_TRAILER"
+```
+
+**If `NO_AUTOCLOSE_TRAILER`:** the gate has nothing to check at merge time. Proceed to Step 1.
+
+**For each issue N referenced by an auto-close trailer:**
+
+```bash
+# 2. Pull issue N's acceptance criteria and the final PR diff.
+gh issue view N --repo jpshackelford/voice-relay --json body -q '.body'
+gh pr diff PR_NUMBER --repo jpshackelford/voice-relay
+```
+
+Walk N's `## Acceptance Criteria` checklist item-by-item. Apply the gate's standard rules:
+
+- **Exempt items:** those marked `(deferred)` / `(out of scope)` / `(follow-up)` in the issue body.
+- **Satisfied:** the diff contains a concrete change a reviewer can point to that delivers the behavior.
+
+**Verdict:**
+
+| Result | Action |
+|--------|--------|
+| Every non-exempt AC item is covered by the diff | ✅ Gate passes — proceed to Step 1. Record the verdict in the squash commit body. |
+| Any non-exempt AC item is uncovered, and no override `## INSTRUCTION:` block exists in `WORKLOG.md` for this PR + issue | ❌ Gate fails — DO NOT merge. See fail-path below. |
+
+**Gate fail-path:**
+
+1. Post a PR comment on PR_NUMBER explaining which AC item(s) are uncovered and the two options:
+   - (a) downgrade the trailer to `Refs #N` / `Part of #N` and file follow-up issue(s) for the gap(s), OR
+   - (b) extend the diff to cover the missing AC item(s).
+2. Drop the PR back to draft: `gh pr ready PR_NUMBER --undo --repo jpshackelford/voice-relay`.
+3. Log the gate failure in `WORKLOG.md` on `main` (verdict line: `gate FAILED at merge — uncovered: ...`) and exit.
+4. The next orchestrator tick will route this PR to a review or implementation worker per the decision table.
+
+**Override:** the merge worker may bypass the gate only if `WORKLOG.md` contains an open `## INSTRUCTION:` block that explicitly names this PR number, the issue number, and the AC items being waived. Record the override in the squash commit body (`Gate override per WORKLOG INSTRUCTION: ...`) and in the cycle's WORKLOG entry.
+
 ### 1. Study the PR Holistically
 
 Don't just look at the latest changes - understand the full picture:

@@ -118,7 +118,7 @@ If the worklog is getting large, archive old entries to keep the file manageable
 WORKLOG_LINES=$(wc -l < WORKLOG.md 2>/dev/null || echo 0)
 if [ "$WORKLOG_LINES" -gt 300 ]; then
   echo "📦 WORKLOG.md has $WORKLOG_LINES lines - running truncation"
-  
+
   # Run the truncation script (see /truncate-worklog skill for full implementation)
   python3 << 'TRUNCATE_SCRIPT'
 import re
@@ -132,7 +132,7 @@ def is_productive(content):
                   '✅ **Expanded', '✅ **Addressed', '✅ **Created:', '📋 **Following',
                   '🔒 **Auto-disabled']
     status = ['⏳ **Waiting**', '✅ **All quiet**', 'Action Taken: None', 'Action Taken:\nNone']
-    
+
     for s in status:
         if s in content:
             return False
@@ -145,14 +145,14 @@ def truncate_worklog(repo_path="."):
     worklog_path = os.path.join(repo_path, "WORKLOG.md")
     with open(worklog_path, 'r') as f:
         content = f.read()
-    
+
     parts = re.split(r'(^## Log$)', content, maxsplit=1, flags=re.MULTILINE)
     if len(parts) < 3:
         return
-    
+
     header = parts[0] + parts[1]
     entries_section = parts[2]
-    
+
     entries = []
     for raw in re.split(r'\n---\n', entries_section):
         raw = raw.strip()
@@ -164,38 +164,38 @@ def truncate_worklog(repo_path="."):
         date_str, time_str = match.groups()
         ts = datetime.strptime(f"{date_str} {time_str}", "%Y-%m-%d %H:%M").replace(tzinfo=timezone.utc)
         entries.append({'timestamp': ts, 'date': date_str, 'content': raw, 'productive': is_productive(raw)})
-    
+
     if not entries:
         return
-    
+
     # Calculate cutoff: keep entries spanning 6 hours of productive work
     productive = sorted([e for e in entries if e['productive']], key=lambda e: e['timestamp'], reverse=True)
     if not productive:
         return  # Keep everything if no productive work
-    
+
     newest, oldest_in_window = productive[0]['timestamp'], productive[0]['timestamp']
     for e in productive:
         oldest_in_window = e['timestamp']
         if newest - oldest_in_window >= timedelta(hours=6):
             break
-    
+
     to_keep = [e for e in entries if e['timestamp'] >= oldest_in_window]
     to_archive = [e for e in entries if e['timestamp'] < oldest_in_window]
-    
+
     if not to_archive:
         print("✅ Nothing to archive")
         return
-    
+
     # Archive old entries by date
     by_date = defaultdict(list)
     for e in to_archive:
         by_date[e['date']].append(e)
-    
+
     for date, date_entries in sorted(by_date.items()):
         date_entries.sort(key=lambda e: e['timestamp'])
         archive_file = os.path.join(repo_path, f"WORKLOG_ARCHIVE_{date}.md")
         archive_content = "\n\n---\n".join(e['content'] for e in date_entries)
-        
+
         if os.path.exists(archive_file):
             with open(archive_file, 'a') as f:
                 f.write(f"\n\n---\n{archive_content}")
@@ -203,7 +203,7 @@ def truncate_worklog(repo_path="."):
             with open(archive_file, 'w') as f:
                 f.write(f"# Voice Relay Worklog Archive - {date}\n\nArchived entries from WORKLOG.md.\n\n---\n\n{archive_content}")
         print(f"📦 Archived {len(date_entries)} entries to WORKLOG_ARCHIVE_{date}.md")
-    
+
     # Rewrite WORKLOG.md
     to_keep.sort(key=lambda e: e['timestamp'])
     new_content = f"{header}\n\n" + "\n\n---\n".join(e['content'] for e in to_keep) + "\n"
@@ -405,11 +405,11 @@ OH_API_KEY = os.environ.get("OH_API_KEY")
 def check_conv_status(conv_id):
     """Query API for conversation status and title."""
     result = subprocess.run([
-        "curl", "-s", 
+        "curl", "-s",
         f"https://app.all-hands.dev/api/v1/app-conversations/search?limit=50",
         "-H", f"Authorization: Bearer {OH_API_KEY}"
     ], capture_output=True, text=True)
-    
+
     try:
         data = json.loads(result.stdout)
         for item in data.get("items", []):
@@ -439,20 +439,20 @@ def update_state():
     """Move finished workers from slots to completed array."""
     with open(STATE_FILE, 'r') as f:
         state = json.load(f)
-    
+
     # Ensure v2 schema
     if "completed" not in state:
         state["completed"] = []
-    
+
     now = datetime.now(timezone.utc)
     updated = False
-    
+
     for slot_type in ["expansion", "implementation", "review"]:
         active = []
         for worker in state["slots"][slot_type]:
             conv_info = check_conv_status(worker["conv_id"])
             status = conv_info["status"]
-            
+
             if status == "running":
                 active.append(worker)
             else:
@@ -472,22 +472,22 @@ def update_state():
                 state["completed"].append(completed_entry)
                 print(f"✓ {slot_type} worker {worker['conv_id']} → completed ({status})")
                 updated = True
-        
+
         state["slots"][slot_type] = active
-    
+
     # Prune completed entries older than 24 hours
     cutoff = now - timedelta(hours=24)
     state["completed"] = [
         c for c in state["completed"]
         if datetime.fromisoformat(c["finished"].replace("Z", "+00:00")) > cutoff
     ]
-    
+
     if updated or state.get("version") != 2:
         state["version"] = 2
         state["last_updated"] = now.isoformat()
         with open(STATE_FILE, 'w') as f:
             json.dump(state, f, indent=2)
-    
+
     return state
 
 state = update_state()
@@ -663,12 +663,12 @@ STUCK_PR_ISSUE=$(gh pr view $STUCK_PR_NUMBER --json body -q '.body' | grep -oP '
 for issue_num in $READY_ISSUES; do
   # Check if issue body/comments reference the stuck PR's issue
   ISSUE_BODY=$(gh issue view $issue_num --comments)
-  
+
   if echo "$ISSUE_BODY" | grep -qE "(depends on|blocked by|after).*(#$STUCK_PR_ISSUE|PR #$STUCK_PR_NUMBER)"; then
     echo "Issue #$issue_num depends on stuck PR - skipping"
     continue
   fi
-  
+
   # This issue is independent - can be worked on
   echo "Issue #$issue_num is independent - can proceed"
   break
@@ -702,6 +702,20 @@ All remaining issues depend on stuck PR #5 which requires human intervention.
 ### Key Principle
 
 **Maximize productivity:** The orchestrator should always be doing useful work when possible. A single stuck PR should never halt progress on independent issues. Only when ALL issues are genuinely blocked should the orchestrator wait.
+
+## Anti-Stall: Decision Table is Exhaustive
+
+The slot decision tables below are exhaustive. The orchestrator may defer a PR or an issue only when a **codified gate** is present:
+
+1. An open `## INSTRUCTION:` block in `WORKLOG.md` (on `main` of the target repo) that explicitly defers the PR/issue, or
+2. A `hold` label on the PR or its tracking issue, or
+3. A documented policy in `AGENTS.md` or in this plugin's skill files (including the Closing-Trailer AC Gate in `SKILL.md`).
+
+Advisory notes from prior workers — including supply-chain warnings, "follow-ups will be filed later" promises, or freeform `## NOTE:` blocks — do **not** defer a PR/issue and do **not** justify auto-disable on their own. If a prior worklog entry cites a "policy gate" that is not codified in one of the three places above, treat the gate as out of scope and proceed per the decision table, with a brief override note in the cycle's WORKLOG entry.
+
+This rule complements [Auto-Disable on Consecutive Quiet Periods](#auto-disable-on-consecutive-quiet-periods): a tick is "quiet" only when the decision table genuinely has nothing to dispatch, not when work exists but a prior advisory note made the orchestrator squeamish about taking it.
+
+> The Closing-Trailer AC Gate (a worker-side rule, defined in `SKILL.md`) is **not** an orchestrator-side gate. The orchestrator never refuses to dispatch a worker because of the gate — it dispatches the appropriate worker (impl / review / merge) and the worker applies the gate at its own checkpoints. If a merge worker fails the gate and drops the PR back to draft, the orchestrator's next tick treats it as a normal review-needed PR.
 
 ## Decision Tree
 
@@ -781,7 +795,7 @@ def spawn_worker(slot_type, conv_id, target_id, target_type="issue"):
     """Add a new worker to the state file."""
     with open(".workflow-state.json", 'r') as f:
         state = json.load(f)
-    
+
     worker = {
         "conv_id": conv_id[:7],  # 7-char prefix
         target_type: target_id,   # "issue": 9 or "pr": 42
@@ -789,10 +803,10 @@ def spawn_worker(slot_type, conv_id, target_id, target_type="issue"):
     }
     state["slots"][slot_type].append(worker)
     state["last_updated"] = datetime.now(timezone.utc).isoformat()
-    
+
     with open(".workflow-state.json", 'w') as f:
         json.dump(state, f, indent=2)
-    
+
     # Also log to WORKLOG.md for human visibility
     log_to_worklog(slot_type, conv_id, target_id)
 ```
@@ -834,7 +848,7 @@ ohtv refs CONV_ID
 - Each targets a different issue (oldest first)
 
 **For Implementation Slot (max 1):**
-- Only spawn if `IMPL_AVAILABLE = 1` 
+- Only spawn if `IMPL_AVAILABLE = 1`
 - Targets highest priority ready issue
 
 **For Review Slots (max 2):**
@@ -873,40 +887,40 @@ Repository: jpshackelford/voice-relay
 Title: [Expansion] Issue #{issue_number} - {issue_title}
 Prompt: |
   You are expanding GitHub Issue #{issue_number} for the voice-relay project.
-  
+
   **ISSUE TO EXPAND:**
   - Issue: #{issue_number} - {issue_title}
   - URL: https://github.com/jpshackelford/voice-relay/issues/{issue_number}
-  
+
   Your job is to analyze this issue and add technical detail so it's ready for implementation.
-  
+
   **FOR BUG REPORTS:**
   1. Clone the repo and set up the environment
   2. Attempt to reproduce the bug
   3. If reproducible, investigate code to find root cause
   4. Rewrite issue body with: Problem, Steps to Reproduce, Expected/Actual behavior
   5. Add comment with: Root Cause Analysis, Proposed Fix, Files to modify
-  
+
   **FOR ENHANCEMENTS:**
   1. Understand the user need / pain point
   2. Explore codebase to understand current architecture
   3. Rewrite issue body with: Problem Statement, Proposed Solution, Acceptance Criteria
   4. Add comment with: Technical Approach, Implementation Plan, Files affected
-  
+
   **WHEN DONE:**
   1. Add `ready` label: gh issue edit {issue_number} --add-label ready
   2. Update WORKLOG.md on main with completion status
      ⚠️ WORKLOG.md changes ALWAYS go directly to main, never in feature branches/PRs
   3. Exit
-  
+
   **IF BLOCKED:**
   - Can't reproduce bug → Add `needs-info` label, comment with questions
   - Too vague → Add `needs-info` label, ask for clarification
   - Should be split → Add `needs-split` label, suggest breakdown
   - Do NOT add `ready` label if blocked
-  
+
   See /expand-issue skill for detailed guidance.
-  
+
 Plugins: github:jpshackelford/.openhands/plugins/voice-relay-workflow@add-voice-relay-workflow-plugin
 Issue Number: {issue_number}
 Worker Type: expansion
@@ -922,41 +936,41 @@ Repository: jpshackelford/voice-relay
 Title: [Implementation] Issue #{issue_number} - {issue_title}
 Prompt: |
   You are implementing GitHub Issue #{issue_number} for the voice-relay project.
-  
+
   **ISSUE TO IMPLEMENT:**
   - Issue: #{issue_number} - {issue_title}
   - URL: https://github.com/jpshackelford/voice-relay/issues/{issue_number}
   - Priority: {priority_label}
-  
-  This issue has already been expanded with technical detail. Read the issue 
-  description AND comments for the implementation approach.
-  
-  **PRODUCTION CONTEXT:**
-  - App auto-deploys to vr.chorecraft.net on merge to main
-  - Production currently uses SQLite (sqlite.db)
-  - All schema changes MUST include migrations
-  - Migrations must be backward-compatible with existing data
-  
-  1. Read the issue description AND comments: gh issue view {issue_number} --comments
-  2. The technical approach comment tells you what to build
-  3. Create a feature branch from main (ensure main is up-to-date)
-  4. Implement following the approach in the issue comments
-  5. Write tests (target >80% coverage for new code)
-  6. If adding/modifying database schema:
-     - Create migration files (up and down)
-     - Test migrations work on fresh DB and existing data
-  7. Run lints and type checks, fix any issues
-  8. Commit with clear messages, push, create a DRAFT PR
-  9. Link PR to issue: Include "Fixes #{issue_number}" in PR description
-  10. Monitor CI, fix any failures until green
-  11. Once CI is green, REFLECT:
-      - Are all acceptance criteria from the issue met?
-      - Note any learnings or follow-up items
-  12. Move PR from draft to ready (triggers review bot)
-  13. Update WORKLOG.md on main with PR link
-      ⚠️ WORKLOG.md changes ALWAYS go directly to main, never in feature branches/PRs
-  14. Exit - review handling is a separate conversation
-  
+
+  This issue has already been expanded with technical detail. Read the issue
+  description AND comments before doing anything else.
+
+  **PRODUCTION CONTEXT (brief):**
+  - App auto-deploys to vr.chorecraft.net on merge to main; production uses SQLite.
+  - Schema changes MUST include backward-compatible migrations.
+
+  **Procedure (high level):**
+
+  1. Read the issue: gh issue view {issue_number} --comments
+  2. Branch from up-to-date main, implement, test (>80% coverage on new code),
+     migrate if schema-touching, lint, typecheck, push, open DRAFT PR.
+  3. Monitor CI until green.
+  4. **Run the Closing-Trailer Acceptance-Criteria Gate** (see plugin SKILL.md):
+     - Walk issue #{issue_number}'s ## Acceptance Criteria item-by-item vs the diff.
+     - All non-exempt items satisfied → trailer is `Fixes #{issue_number}`.
+     - Any non-exempt item unsatisfied → trailer is `Refs #{issue_number}`, AND
+       you MUST file a follow-up issue for each gap BEFORE moving the PR to ready,
+       AND add a `## Deferred to follow-ups` section to the PR body.
+     - Verbal promises ("I'll file follow-ups once this lands") do NOT satisfy the gate.
+  5. REFLECT and RE-RUN the gate against the final diff (CI fixes can shift coverage).
+  6. Move PR from draft to ready (triggers review bot).
+  7. Update WORKLOG.md on main with PR link + AC-gate verdict + any follow-up issue numbers.
+     ⚠️ WORKLOG.md changes ALWAYS go directly to main, never in feature branches/PRs.
+  8. Exit — review handling is a separate conversation.
+
+  **For the full procedure including detailed gate steps, follow-up issue
+  templates, and override semantics, invoke `/implement-issue`.**
+
 Plugins: github:jpshackelford/.openhands/plugins/voice-relay-workflow@add-voice-relay-workflow-plugin
 Issue Number: {issue_number}
 Worker Type: implementation
@@ -968,37 +982,41 @@ Worker Type: implementation
 **Slot:** PR slot (serialized with implementation/merge)
 
 ```
-Repository: jpshackelford/voice-relay  
+Repository: jpshackelford/voice-relay
 Title: [Review Round] PR #{number} - {title}
 Prompt: |
   You are addressing review feedback on PR #{number}.
-  
-  **PRODUCTION CONTEXT:**
-  - App auto-deploys to vr.chorecraft.net on merge to main
-  - Production currently uses SQLite (sqlite.db)
-  - Verify any migration changes are backward-compatible
-  
-  1. Clone the repo and checkout the PR branch
-  2. IMMEDIATELY set PR back to draft mode: gh pr ready {number} --undo
-  3. Read ALL review comments and threads carefully
-  4. For each piece of feedback, decide:
-     - Accept and implement (most suggestions improve code quality)
-     - Reject only if it significantly increases scope/complexity without clear benefit
-  5. Group related changes into logical commits
-  6. For each commit:
-     - Make the change
-     - Commit with clear message referencing the feedback
-     - Push and verify CI passes before moving to next commit
-  7. As you resolve each review thread:
-     - Reply explaining what you did (or why you declined)
-     - Mark thread as resolved using GitHub GraphQL API
-  8. After all feedback addressed, REFLECT:
-     - Did you learn anything that impacts other issues?
-     - If so, add comments to relevant issues
-  9. Move PR back to ready: gh pr ready {number}
-  10. Update WORKLOG.md on main with status
-      ⚠️ WORKLOG.md changes ALWAYS go directly to main, never in feature branches/PRs
-  11. Exit - next review round is a separate conversation
+
+  **PRODUCTION CONTEXT (brief):**
+  - App auto-deploys to vr.chorecraft.net on merge to main; production uses SQLite.
+  - Migration changes must remain backward-compatible.
+
+  **Procedure (high level):**
+
+  1. Checkout the PR branch and IMMEDIATELY drop back to draft:
+     `gh pr ready {number} --undo`.
+  2. Read ALL review threads carefully. For each, plan: accept and implement,
+     or reject with explanation.
+  3. Group changes into logical commits, one per thread or theme. Make each,
+     commit, push, wait for CI green before the next.
+  4. Resolve each review thread with a reply explaining what you did.
+  5. REFLECT — note any cross-issue learnings as comments on the related issues.
+  6. **RE-RUN the Closing-Trailer Acceptance-Criteria Gate** (see plugin SKILL.md):
+     - Find the linked issue from the PR body's trailer
+       (`Fixes/Closes/Resolves/Refs/Part of #N`).
+     - Walk its ## Acceptance Criteria against the now-current diff.
+     - If the verdict CHANGED (was Fixes, now an AC is uncovered; or was Refs,
+       now all ACs are covered): update the trailer, file/close follow-up
+       issue(s) accordingly, and update the PR body's `## Deferred to follow-ups`.
+     - Note the re-verdict explicitly in the comment that closes this review round
+       ("AC gate re-run: unchanged" or "AC gate re-run: now refs + 2 follow-ups").
+  7. Move PR back to ready: `gh pr ready {number}`.
+  8. Update WORKLOG.md on main with status + gate re-verdict + any follow-up changes.
+     ⚠️ WORKLOG.md changes ALWAYS go directly to main, never in feature branches/PRs.
+  9. Exit — next review round is a separate conversation.
+
+  **For the full procedure including detailed gate re-run logic, verdict
+  transitions, and override semantics, invoke `/address-review`.**
 
 Plugins: github:jpshackelford/.openhands/plugins/voice-relay-workflow@add-voice-relay-workflow-plugin
 PR Number: {number}
@@ -1015,33 +1033,45 @@ Repository: jpshackelford/voice-relay
 Title: [Merge] PR #{number} - {title}
 Prompt: |
   You are preparing PR #{number} for merge. Merge criteria has been met.
-  
-  **PRODUCTION CONTEXT:**
-  - App auto-deploys to vr.chorecraft.net on merge to main
-  - Production currently uses SQLite (sqlite.db)
-  - This merge will immediately affect production
-  - Verify migrations are safe before merging
-  
-  1. Clone the repo and checkout the PR branch
-  2. Study the full PR diff holistically - understand what was built
-  3. **MIGRATION CHECK:** If this PR includes database changes:
-     - Verify migration files exist and are correct
-     - Confirm migrations are additive/safe for existing data
-     - Note any manual steps needed post-deploy
-  4. Read all review history to understand how it evolved
-  5. Update PR description to reflect final state:
-     - What was implemented
-     - Key decisions made during review
-     - Any notable technical details
-     - **Migration notes** if applicable
-  6. Craft a good conventional commit message for squash-merge:
-     - feat: / fix: / chore: / refactor: as appropriate
-     - Clear summary line
-     - Body with relevant details
-  7. Squash and merge: gh pr merge {number} --squash --body "commit message"
-  8. The linked issue will auto-close if PR description has "Fixes #N"
-  9. Verify issue closed; if not, close manually: gh issue close {issue_number}
-  10. Exit
+
+  **PRODUCTION CONTEXT (brief):**
+  - App auto-deploys to vr.chorecraft.net on merge to main; production uses SQLite.
+  - This merge will immediately affect production. Migrations must be safe.
+
+  **Procedure (high level):**
+
+  1. Checkout the PR branch and read the full diff and review history.
+  2. **MIGRATION CHECK** if schema-touching: migrations exist, are additive/safe,
+     post-deploy steps noted in the PR body.
+  3. **RUN THE CLOSING-TRAILER AC GATE — HARD GATE, BLOCKS MERGE** (see plugin SKILL.md
+     and `/prepare-merge` Step 0):
+     - Extract auto-close trailers from the PR body
+       (`Fixes/Closes/Resolves #N` — if none, the gate has nothing to check).
+     - For each linked issue N, walk its ## Acceptance Criteria item-by-item vs
+       the final diff. Exempt items: those marked (deferred)/(out of scope)/(follow-up)
+       in the issue body.
+     - If any non-exempt AC item is uncovered AND no override `## INSTRUCTION:`
+       block in WORKLOG.md names this PR + issue:
+       * DO NOT merge.
+       * Post a PR comment listing the uncovered AC items and the two options
+         (downgrade trailer + file follow-ups, OR extend the diff).
+       * Drop the PR back to draft: `gh pr ready {number} --undo`.
+       * Log the gate failure in WORKLOG.md on main and EXIT.
+       * The next orchestrator tick will re-route via the decision table.
+     - If the gate passes (or an override INSTRUCTION exists), record the verdict
+       in the squash commit body and proceed.
+  4. Update PR description to reflect final state, key review decisions,
+     migration notes, and the gate verdict.
+  5. Craft a conventional commit message (include the gate verdict line).
+  6. Squash and merge: `gh pr merge {number} --squash --body "..."`.
+  7. Linked-issue handling depends on the gate verdict:
+     - `Fixes/Closes/Resolves #N` → GitHub auto-closes N. Verify; close manually if not.
+     - `Refs/Part-of #N` → DO NOT close N. The follow-up issues from the gate
+       cover the remaining work; N stays open until they drain.
+  8. Exit.
+
+  **For the full procedure including the detailed gate steps, fail-path,
+  and override semantics, invoke `/prepare-merge`.**
 
 Plugins: github:jpshackelford/.openhands/plugins/voice-relay-workflow@add-voice-relay-workflow-plugin
 PR Number: {number}
@@ -1132,7 +1162,7 @@ Include the conversation ID (first 7 chars) in the Active Workers table:
    - Issue: [#12 - Join via QR](https://github.com/jpshackelford/voice-relay/issues/12)
    - Conversation: [`abc1234`](https://app.all-hands.dev/conversations/abc1234...)
 
-2. **Implementation Worker**  
+2. **Implementation Worker**
    - Issue: [#9 - Scope messages](https://github.com/jpshackelford/voice-relay/issues/9) (priority:high)
    - Conversation: [`def5678`](https://app.all-hands.dev/conversations/def5678...)
 

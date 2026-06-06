@@ -58,6 +58,42 @@ New Issue → Expansion → Ready → Prioritized → Implementation → PR → 
     └── No 'ready' label
 ```
 
+## Closing-Trailer Acceptance-Criteria Gate (cross-cutting rule)
+
+This rule applies to **every worker that touches a PR body** — implementation, review, and merge. It is loaded as plugin context for all of them.
+
+### Why this rule exists
+
+Auto-close trailers (`Fixes #N` / `Closes #N` / `Resolves #N`) are a **one-way door**: when a PR with such a trailer merges, GitHub closes issue N regardless of whether N's acceptance criteria are satisfied. Without this gate, "we shipped most of it, the rest is a follow-up" silently closes the original tracker — the failure mode that produced [voice-relay #386](https://github.com/jpshackelford/voice-relay/issues/386) (PR #402 used `Fixes #386` against a server-only diff while #386's acceptance criteria explicitly required client-side work; the worker's pre-merge promise to "file follow-ups once this lands" was never executed, and the tracker was auto-closed with most ACs unmet).
+
+### The rule
+
+Before any worker writes an auto-close trailer for issue N into a PR body — **at PR-open time, at ready-for-review time, and at merge time** — the worker MUST verify that **every non-exempt item in issue N's `## Acceptance Criteria` section is satisfied by the PR's diff**.
+
+- **Exempt items:** AC items explicitly marked `(deferred)` / `(out of scope)` / `(follow-up)` in the issue body itself.
+- **Satisfied by the diff:** the PR diff contains a concrete change a reviewer can point to that delivers the behavior the AC describes.
+
+**Verdict matrix:**
+
+| Result | Trailer | Follow-up issues | PR body |
+|---|---|---|---|
+| All non-exempt ACs satisfied | `Fixes #N` / `Closes #N` / `Resolves #N` is allowed | none required | normal |
+| Any non-exempt AC unsatisfied | MUST downgrade to `Refs #N` (or `Part of #N`) | MUST file one per gap (or per coherent group) **before** the PR moves to ready-for-review | MUST include a `## Deferred to follow-ups` section listing the new issue numbers |
+
+**Verbal promises are not sufficient.** A PR or issue comment that says "I'll file follow-ups once this lands" does not satisfy the gate. The follow-up issues must exist as GitHub issues before merge.
+
+### Where each worker enforces the gate
+
+| Worker | Where | When |
+|---|---|---|
+| Implementation (`/implement-issue`) | At PR-open time and re-check after CI green | Initial trailer decision; re-check in case of late scope shifts |
+| Review (`/address-review`) | After each review round | Review feedback can flip the gate verdict in either direction |
+| Merge (`/prepare-merge`) | Final hard gate before squashing | Last line of defense — block the merge if the gate fails |
+
+### Override
+
+The gate may be overridden only by an open `## INSTRUCTION:` block in `WORKLOG.md` (on `main` of the target repo) that explicitly names the PR number, the issue number, and the AC items being waived. The override must be recorded in the cycle's WORKLOG entry and (for merge) in the squash commit body.
+
 ## Worker Tracking via .workflow-state.json
 
 Active workers are tracked in `.workflow-state.json` (machine-readable) and logged to `WORKLOG.md` (human-readable):
@@ -112,9 +148,11 @@ lxa pr list "jpshackelford/voice-relay#<PR_NUMBER>"
 
 | Skill | Trigger | Purpose |
 |-------|---------|---------|
+| [Implement Issue](skills/implement-issue.md) | `/implement-issue` | Full implementation worker procedure (branch, code, tests, PR, AC gate) |
+| [Address Review](skills/address-review.md) | `/address-review` | Full review worker procedure (resolve feedback, AC-gate re-run) |
 | [PR Workflow Status](skills/pr-workflow-status.md) | `/pr-workflow-status` | Get PR state using lxa + gh |
 | [Update Project Plan](skills/update-project-plan.md) | `/update-plan` | Reflect and update docs |
-| [Prepare and Merge](skills/prepare-and-merge.md) | `/prepare-merge` | Final merge workflow |
+| [Prepare and Merge](skills/prepare-and-merge.md) | `/prepare-merge` | Final merge workflow (hard AC gate, squash, manual close) |
 
 ### Automation Management
 
@@ -147,17 +185,17 @@ To re-enable after auto-disable:
 
 ## Workflow Phases
 
-### Phase 1: Implementation
+### Phase 1: Implementation (`/implement-issue`)
 A worker conversation:
 - Reads the GitHub issue to understand requirements and acceptance criteria
 - Creates feature branch, implements with tests
 - Lints, type checks, commits, pushes
-- Creates draft PR with "Fixes #N" to link to issue
+- Creates draft PR — **runs the Closing-Trailer AC Gate** (see above) to decide between `Fixes #N` and `Refs #N` + follow-up issues
 - Monitors CI until green
-- **Reflects**: Comments learnings on related issues if needed
+- **Reflects** and **re-runs the AC Gate** in case scope shifted late
 - Moves PR to ready (triggers review bot)
 
-### Phase 2: Review Rounds
+### Phase 2: Review Rounds (`/address-review`)
 For each review round, a worker conversation:
 - Clones PR, immediately sets back to draft
 - Reads all review comments deeply
@@ -165,15 +203,17 @@ For each review round, a worker conversation:
 - Executes changes commit-by-commit, CI check after each
 - Resolves review threads with explanations
 - **Reflects**: Checks if learnings impact other issues
+- **Re-runs the Closing-Trailer AC Gate** — review feedback can flip the verdict (an AC may become uncovered, or vice-versa); reconcile the trailer + follow-ups before going back to ready
 - Moves PR back to ready for next review
 
-### Phase 3: Merge
+### Phase 3: Merge (`/prepare-merge`)
 When merge criteria met (good rating, or 3x acceptable, or acceptable+spurious):
+- Runs the **Closing-Trailer AC Gate as a hard gate** (Step 0 of `/prepare-merge`) — if it fails, do not merge: post a PR comment, drop to draft, log, exit, and let the next orchestrator tick re-route
 - Studies the full diff holistically
-- Updates PR description to reflect final state
-- Crafts conventional commit message
-- Squash-merges (issue auto-closes via "Fixes #N")
-- Verifies issue is closed
+- Updates PR description to reflect final state and the gate verdict
+- Crafts conventional commit message (records gate verdict in body)
+- Squash-merges
+- Linked-issue handling depends on the gate verdict: `Fixes/Closes/Resolves #N` lets GitHub auto-close N; `Refs/Part-of #N` leaves N open while follow-ups drain
 
 ## Merge Criteria
 
