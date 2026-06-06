@@ -86,6 +86,8 @@ The orchestrator can run **up to 7 workers simultaneously** across three slot ty
 │  5. GATHER STATE:                                                │
 │     - Open PRs (lxa pr list)                                    │
 │     - Issues by label: ready, needs-triage, priority:*          │
+│     - UNBLOCK PASS: lift stale `on-hold` whose `Blocked by #N`  │
+│       references are all CLOSED (see Unblock Pass section)      │
 │  6. DECIDE what to spawn (see Decision Tree)                    │
 │  7. SPAWN worker(s) if slots available and work exists          │
 │  8. UPDATE WORKLOG.md with current state                        │
@@ -547,11 +549,78 @@ gh issue list --repo jpshackelford/voice-relay --state open --label "ready" --js
 
 | Category | Label State | What to Do |
 |----------|-------------|------------|
-| Needs expansion | No `ready` label | Spawn expansion worker |
+| Needs expansion | No `ready` and no `on-hold` / `needs-human` label | Spawn expansion worker |
 | Ready, unprioritized | `ready` but no `priority:*` | Run `/assess-priority` inline |
-| Ready, prioritized | `ready` + `priority:*` | Spawn implementation worker for highest priority |
-| Blocked | Has `blocked` label | Skip until unblocked |
+| Ready, prioritized | `ready` + `priority:*` (no `on-hold` / `needs-human`) | Spawn implementation worker for highest priority |
+| On hold (machine-tracked) | `on-hold` + a comment with one or more `Blocked by #N` lines | Run the **Unblock Pass** below before treating as blocked; lift `on-hold` if all blockers are closed |
+| On hold (policy-tracked) | `on-hold` with no machine-parseable `Blocked by #N` comment | Skip — the label is held by `AGENTS.md` policy or a freeform human/agent note. Only a human (or a new INSTRUCTION block) can lift it |
+| Needs human | Has `needs-human` label | Skip — only a human can lift it |
+| Blocked (legacy) | Has `blocked` label | Skip until unblocked |
 | Needs info | Has `needs-info` label | Skip until reporter responds |
+
+### Unblock Pass (run during Gather State, before dispatch)
+
+Before consulting the decision tree, walk every open `on-hold` issue and lift the label if all of its referenced blockers have closed. The orchestrator only parses the machine-readable form `Blocked by #N` (one per line, `#` followed by digits, case-insensitive on "Blocked by"). Prose like "depends on #N" or "once #N lands" is **not** parsed — by design, so that long-form discussion in comments doesn't accidentally trigger unblocking.
+
+```bash
+# Unblock Pass — lift stale on-hold labels whose blockers have all closed.
+# Idempotent and read-only when nothing has changed.
+REPO="jpshackelford/voice-relay"
+
+gh issue list --repo "$REPO" --state open --label "on-hold" \
+  --json number --jq '.[].number' | while read -r issue_num; do
+
+  # Concatenate ALL comment bodies (most-recent first) and the issue body itself,
+  # then extract every `Blocked by #N` reference.
+  blockers=$(
+    {
+      gh issue view "$issue_num" --repo "$REPO" --json body --jq '.body'
+      gh issue view "$issue_num" --repo "$REPO" --json comments \
+        --jq '[.comments[] | .body] | reverse | .[]'
+    } | grep -oiE 'blocked by #[0-9]+' \
+      | grep -oE '[0-9]+' \
+      | sort -un
+  )
+
+  # No machine-parseable blockers → policy-tracked on-hold (e.g., S3 freeze
+  # in AGENTS.md, external-dependency holds, umbrella trackers). Leave it alone.
+  if [ -z "$blockers" ]; then
+    continue
+  fi
+
+  all_closed=true
+  for b in $blockers; do
+    state=$(gh issue view "$b" --repo "$REPO" --json state --jq '.state' 2>/dev/null || echo "UNKNOWN")
+    if [ "$state" != "CLOSED" ]; then
+      all_closed=false
+      break
+    fi
+  done
+
+  if [ "$all_closed" = "true" ]; then
+    blocker_refs=$(echo "$blockers" | sed 's/^/#/' | paste -sd ', ' -)
+    gh issue edit "$issue_num" --repo "$REPO" --remove-label "on-hold"
+
+    has_ready=$(gh issue view "$issue_num" --repo "$REPO" --json labels \
+      --jq '.labels | map(.name) | index("ready") != null')
+    if [ "$has_ready" = "false" ]; then
+      gh issue edit "$issue_num" --repo "$REPO" --add-label "ready"
+    fi
+
+    gh issue comment "$issue_num" --repo "$REPO" --body "## ✅ Unblock pass
+
+All blockers referenced in earlier comments ($blocker_refs) are now closed. Lifting \`on-hold\`$([ "$has_ready" = "false" ] && echo " and adding \`ready\`").
+
+_This comment was posted by an AI agent (OpenHands orchestrator) on behalf of @jpshackelford._"
+
+    echo "Unblocked #$issue_num (blockers: $blocker_refs)"
+  fi
+done
+```
+
+Log the unblock pass in the cycle's WORKLOG entry: list any issues that were unblocked, or note "Unblock pass: 0 issues lifted" if nothing changed. An unblock that adds a `ready` issue **does** count as a productive tick — reset `quiet_ticks` to 0 even if no worker was spawned this cycle, because the next tick will have new work.
+
+**Why "machine form only":** the expansion worker (`/expand-issue`) explicitly emits a `## 🛑 on-hold rationale` comment with one `Blocked by #N` line per blocker (see `expand-issue.md`'s "Issue is hard-blocked" section). Any `on-hold` label without that form is, by convention, a *policy* hold (AGENTS.md design freeze, umbrella tracker, external-dependency hold) and the orchestrator must not lift it. If an existing issue's `on-hold` rationale was written in prose only and you want the orchestrator to handle it mechanically, add a top-level comment containing just `Blocked by #<N>` lines (no other words on those lines) and the next unblock pass will pick it up.
 
 ## Handling Stuck PRs Requiring Human Intervention
 
@@ -708,10 +777,12 @@ All remaining issues depend on stuck PR #5 which requires human intervention.
 The slot decision tables below are exhaustive. The orchestrator may defer a PR or an issue only when a **codified gate** is present:
 
 1. An open `## INSTRUCTION:` block in `WORKLOG.md` (on `main` of the target repo) that explicitly defers the PR/issue, or
-2. A `hold` label on the PR or its tracking issue, or
+2. An `on-hold`, `needs-human`, or legacy `hold` label on the PR or its tracking issue. For `on-hold` specifically, the gate is only honored *after* the Unblock Pass has had a chance to lift stale labels this tick (see "Unblock Pass" under Gather State), or
 3. A documented policy in `AGENTS.md` or in this plugin's skill files (including the Closing-Trailer AC Gate in `SKILL.md`).
 
 Advisory notes from prior workers — including supply-chain warnings, "follow-ups will be filed later" promises, or freeform `## NOTE:` blocks — do **not** defer a PR/issue and do **not** justify auto-disable on their own. If a prior worklog entry cites a "policy gate" that is not codified in one of the three places above, treat the gate as out of scope and proceed per the decision table, with a brief override note in the cycle's WORKLOG entry.
+
+**Before auto-disabling on a quiet tick, the orchestrator MUST have run the Unblock Pass in this tick.** A "no actionable work" verdict that hasn't been re-checked against blocker state is not a quiet tick — it's a stale-label tick, and that's the failure mode this skill is explicitly defending against (see `voice-relay#272`-class incidents and the 2026-06-06 stale-`on-hold` accumulation that motivated the unblock pass).
 
 This rule complements [Auto-Disable on Consecutive Quiet Periods](#auto-disable-on-consecutive-quiet-periods): a tick is "quiet" only when the decision table genuinely has nothing to dispatch, not when work exists but a prior advisory note made the orchestrator squeamish about taking it.
 
