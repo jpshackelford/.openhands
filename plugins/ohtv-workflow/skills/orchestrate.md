@@ -722,6 +722,36 @@ PR Number: {number}
 
 After each orchestrator run, append a status update to `WORKLOG.md` in the repo root.
 
+### 🚨 Non-negotiable: status marker on every entry
+
+**Every orchestrator worklog entry MUST end with exactly one of:**
+
+```
+<!-- orchestrator-status: spawn -->
+```
+or
+```
+<!-- orchestrator-status: quiet -->
+```
+
+This is the *only* signal the auto-disable detection reads — body phrasing like "All quiet", "No worker spawned", or "Counter = 1 of 2" is ignored by the script. Forgetting the marker silently breaks auto-disable. Detailed rules and detection script are in the **Auto-Disable on Consecutive Quiet Periods** section below.
+
+**Before pushing your WORKLOG.md commit**, run this self-check to confirm the marker is present in the entry you just authored:
+
+```bash
+# The just-authored entry should contain exactly one orchestrator-status marker.
+EXPECTED_TS="{your entry's timestamp, e.g. 2026-06-06 19:23 UTC}"
+NEW_ENTRY_MARKER_COUNT=$(awk "/^### $EXPECTED_TS - Orchestrator/,/^---$/" WORKLOG.md \
+  | grep -c "<!-- orchestrator-status:")
+
+if [ "$NEW_ENTRY_MARKER_COUNT" -ne 1 ]; then
+  echo "ERROR: Your new entry has $NEW_ENTRY_MARKER_COUNT markers (expected 1). Add the marker before pushing."
+  exit 1
+fi
+```
+
+If the check fails, edit the entry to add the missing marker before committing/pushing. Do **not** push a worklog entry without its marker.
+
 ### Log Entry Format with Active Workers Table
 
 Include the conversation ID (first 7 chars) in the Active Workers table:
@@ -1017,6 +1047,16 @@ Do NOT:
 - Wait for spawned workers to complete
 - Take multiple actions in one wake-up
 - Loop continuously
+
+### Pre-exit checklist (run before EXIT)
+
+1. WORKLOG.md entry written? ☐
+2. Entry ends with **exactly one** `<!-- orchestrator-status: spawn -->` or `<!-- orchestrator-status: quiet -->` marker line? ☐
+3. Self-check script (in the WORKLOG.md Updates section) returned exit code 0? ☐
+4. Auto-disable check (last two markers in WORKLOG.md) evaluated correctly? ☐
+5. Entry committed and pushed to `main`? ☐
+
+If any box is unchecked, fix it before EXIT. The marker requirement is the most commonly missed step — always confirm it explicitly.
 
 ## Cron Schedule
 
