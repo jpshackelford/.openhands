@@ -1,0 +1,7 @@
+{
+  "name": "ohtv-workflow",
+  "version": "0.1.0",
+  "description": "Automated PR workflow for the ohtv project. Provides skills for orchestrating implementation, manual testing, review, and merge cycles.",
+  "author": "jpshackelford",
+  "repository": "https://github.com/jpshackelford/.openhands"
+}
