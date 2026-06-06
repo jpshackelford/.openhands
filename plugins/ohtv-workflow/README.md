@@ -186,7 +186,7 @@ curl -X POST "https://app.all-hands.dev/api/automation/v1/preset/plugin" \
 
 The orchestrator automatically disables itself after **two consecutive quiet periods** (no work to dispatch). This prevents unnecessary runs when the project is at a natural pause.
 
-**Automation ID:** `c202ca20-60d5-4f5b-9d53-3d7308c1d95b`
+**Automation ID:** `ed08056a-b8d8-41ac-adb3-1d8d105e0cef`
 
 To re-enable:
 - **UI:** [app.all-hands.dev/automations](https://app.all-hands.dev/automations) → Toggle on

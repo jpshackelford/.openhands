@@ -765,6 +765,8 @@ Include the conversation ID (first 7 chars) in the Active Workers table:
 - Ready issues: #9, #10 (awaiting implementation)
 - Issues needing expansion: #11 (now being expanded), #12
 
+<!-- orchestrator-status: spawn -->
+
 ---
 ```
 
@@ -788,6 +790,8 @@ Include the conversation ID (first 7 chars) in the Active Workers table:
 2. **Implementation Worker**  
    - Issue: [#9 - Scope messages](https://github.com/jpshackelford/ohtv/issues/9) (priority:high)
    - Conversation: [`def5678`](https://app.all-hands.dev/conversations/def5678...)
+
+<!-- orchestrator-status: spawn -->
 
 ---
 ```
@@ -813,6 +817,8 @@ Update status when checking workers:
 - Ready issues: #10, #12
 - No issues need expansion 🎉
 
+<!-- orchestrator-status: spawn -->
+
 ---
 ```
 
@@ -832,54 +838,67 @@ Update status when checking workers:
 - All issues expanded
 - Next check in ~30 minutes
 
+<!-- orchestrator-status: quiet -->
+
 ---
 ```
 
+> Note: the `<!-- orchestrator-status: quiet -->` marker is **required** on every quiet entry. See the Auto-Disable section below for the full rule. Spawn entries use `<!-- orchestrator-status: spawn -->` instead.
+
 ## Auto-Disable on Consecutive Quiet Periods
 
-**CRITICAL:** Before logging a "quiet" entry, check if WORKLOG.md already shows two consecutive quiet entries. If so, disable the automation instead of running indefinitely.
+**CRITICAL:** Before logging a quiet entry, check if WORKLOG.md already shows two consecutive quiet entries. If so, disable the automation instead of running indefinitely.
+
+### Required Status Marker (MUST emit, do not paraphrase)
+
+Every orchestrator worklog entry — **regardless of how the run was triggered (cron-fired, user-invoked, or manually dispatched)** — MUST end with **exactly one** of these HTML-comment markers on its own line, immediately before the trailing `---` separator:
+
+```
+<!-- orchestrator-status: spawn -->
+```
+or
+```
+<!-- orchestrator-status: quiet -->
+```
+
+Use `spawn` if you spawned a worker (expansion, implementation, review, docs, testing, etc.) or took a state-changing action on the repo (labels, PR ready, merge, archive, etc.). Use `quiet` if you took no state-changing action.
+
+Do **not** vary, paraphrase, omit, or comment-around this marker. The auto-disable detection is a literal `grep` for the marker string — any phrasing drift in the entry body is ignored. **The marker is the only signal that matters.**
+
+This requirement supersedes any historical convention in older worklog entries that used English phrases like "All quiet" or "No worker spawned" without the marker. Do not invent additional "trigger-source" categories (e.g. "user-invoked vs cron-fired") as a reason to skip the marker or the auto-disable check — every entry counts, regardless of how the run was triggered.
 
 ### Automation ID
 
 This orchestrator's automation ID is:
 ```
-c202ca20-60d5-4f5b-9d53-3d7308c1d95b
+ed08056a-b8d8-41ac-adb3-1d8d105e0cef
 ```
+
+If the automation is recreated and this ID becomes stale, the disable-automation skill falls back to lookup-by-name using `?name=OHTV+Workflow+Orchestrator`.
 
 ### Detection Logic
 
-Check WORKLOG.md for consecutive quiet entries:
+Read the last two status markers in WORKLOG.md (in order). If both are `quiet`, auto-disable instead of logging a third quiet entry:
 
 ```bash
-# Extract last few orchestrator entries and check for consecutive "All quiet" patterns
-# Look for entries that contain both the Orchestrator header and "All quiet"
-QUIET_COUNT=$(tail -100 WORKLOG.md | grep -B2 "All quiet" | grep -c "Orchestrator" || echo 0)
+# Get the last two status markers from WORKLOG.md (most recent two orchestrator decisions).
+LAST_TWO_MARKERS=$(grep -oE "orchestrator-status: (spawn|quiet)" WORKLOG.md | tail -2)
+QUIET_COUNT=$(echo "$LAST_TWO_MARKERS" | grep -c "quiet" || true)
 
-# If 2 or more consecutive quiet entries exist, this would be the 3rd - disable instead
-if [ "$QUIET_COUNT" -ge 2 ]; then
-  echo "Two consecutive quiet periods detected - disabling automation"
+# If both of the last two markers are 'quiet', this run would be the 3rd consecutive — disable.
+if [ "$QUIET_COUNT" -eq 2 ]; then
+  echo "Two consecutive quiet periods detected — disabling automation."
 fi
 ```
 
-Alternative check using the most recent entries:
-
-```bash
-# Get the last 2 orchestrator log entries
-LAST_ENTRIES=$(grep -E "(^### .*Orchestrator|All quiet)" WORKLOG.md | tail -4)
-
-# Check if both recent orchestrator entries were quiet
-if echo "$LAST_ENTRIES" | grep -q "All quiet" && \
-   [ $(echo "$LAST_ENTRIES" | grep -c "All quiet") -ge 2 ]; then
-  echo "Auto-disable triggered: two consecutive quiet periods"
-fi
-```
+Note: this counts markers, not entries. An entry without a marker (legacy or malformed) is simply skipped — it neither resets the counter nor counts toward it. New entries MUST carry the marker.
 
 ### How to Disable
 
 When two consecutive quiet periods are detected:
 
 ```bash
-curl -X PATCH "https://app.all-hands.dev/api/automation/v1/c202ca20-60d5-4f5b-9d53-3d7308c1d95b" \
+curl -X PATCH "https://app.all-hands.dev/api/automation/v1/ed08056a-b8d8-41ac-adb3-1d8d105e0cef" \
   -H "Authorization: Bearer ${OPENHANDS_API_KEY}" \
   -H "Content-Type: application/json" \
   -d '{"enabled": false}'
@@ -892,18 +911,32 @@ curl -X PATCH "https://app.all-hands.dev/api/automation/v1/c202ca20-60d5-4f5b-9d
 
 🔒 **Auto-disabled due to inactivity**
 
-Two consecutive quiet periods detected - no new work to pick up.
+Two consecutive quiet periods detected — no new work to pick up.
 Automation has been disabled to prevent unnecessary runs.
 
 **To re-enable:**
 - OpenHands UI: https://app.all-hands.dev/automations → Find "OHTV Workflow Orchestrator" → Toggle enable
 - Or via API:
   ```bash
-  curl -X PATCH "https://app.all-hands.dev/api/automation/v1/c202ca20-60d5-4f5b-9d53-3d7308c1d95b" \
+  curl -X PATCH "https://app.all-hands.dev/api/automation/v1/ed08056a-b8d8-41ac-adb3-1d8d105e0cef" \
     -H "Authorization: Bearer ${OPENHANDS_API_KEY}" \
     -H "Content-Type: application/json" \
     -d '{"enabled": true}'
   ```
+
+<!-- orchestrator-status: spawn -->
+
+---
+```
+
+### Example Quiet Entry With Marker
+
+```markdown
+### {timestamp} - Orchestrator
+
+✅ All quiet — PR slot occupied (PR #185 ready, waiting on review), expansion slot empty (no candidates).
+
+<!-- orchestrator-status: quiet -->
 
 ---
 ```
@@ -912,11 +945,14 @@ Automation has been disabled to prevent unnecessary runs.
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│  Before logging "All quiet":                                     │
+│  Before logging a 'quiet' marker:                                │
 ├─────────────────────────────────────────────────────────────────┤
-│  1. Check: Are there 2+ consecutive "All quiet" entries?        │
-│     └─ YES → DISABLE automation + log disable message + EXIT    │
-│     └─ NO  → Log normal "All quiet" entry + EXIT                │
+│  1. Read the last TWO markers in WORKLOG.md.                    │
+│  2. Are both 'quiet'?                                            │
+│     └─ YES → DISABLE automation + log disable entry             │
+│              (uses 'spawn' marker — a disable is an action)     │
+│              + EXIT                                              │
+│     └─ NO  → Log normal entry with 'quiet' marker + EXIT        │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
