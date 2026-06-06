@@ -17,26 +17,49 @@ Disable this orchestrator's automation in OpenHands Cloud without deleting it. T
 
 ## When to Use
 
-The orchestrator should disable itself when it detects **two consecutive "quiet" entries** in WORKLOG.md, indicating:
+The orchestrator should disable itself when it detects **two consecutive `<!-- orchestrator-status: quiet -->` markers** in WORKLOG.md, indicating:
 - No new work has appeared for multiple check cycles
 - All PRs are merged or waiting for external input
 - The project has reached a natural pause point
+
+The trigger source of the run (cron-fired, user-invoked, manually dispatched) is **not** relevant — every entry with a `quiet` marker counts.
 
 ## Automation ID
 
 **CRITICAL:** This automation's ID is:
 ```
-c202ca20-60d5-4f5b-9d53-3d7308c1d95b
+ed08056a-b8d8-41ac-adb3-1d8d105e0cef
 ```
 
 This ID identifies the "OHTV Workflow Orchestrator" automation in OpenHands Cloud. Use this exact ID when making the disable API call.
+
+### Fallback: Lookup by Name
+
+If the hardcoded ID returns 404 (automation was recreated), look it up by name. The lookup returns the **enabled** automation matching the name:
+
+```bash
+AUTOMATION_ID=$(curl -s "https://app.all-hands.dev/api/automation/v1?limit=100" \
+  -H "Authorization: Bearer ${OPENHANDS_API_KEY}" \
+  | python3 -c "
+import json, sys
+data = json.load(sys.stdin)
+matches = [a for a in data['automations']
+           if a['name'] == 'OHTV Workflow Orchestrator' and a['enabled']]
+if not matches:
+    sys.exit('No enabled automation named OHTV Workflow Orchestrator')
+print(matches[0]['id'])
+")
+echo "Resolved automation ID: $AUTOMATION_ID"
+```
+
+Use `$AUTOMATION_ID` in place of the hardcoded UUID in the curl commands below if the hardcoded ID is stale.
 
 ## How to Disable
 
 Make a PATCH request to the OpenHands automation API:
 
 ```bash
-curl -X PATCH "https://app.all-hands.dev/api/automation/v1/c202ca20-60d5-4f5b-9d53-3d7308c1d95b" \
+curl -X PATCH "https://app.all-hands.dev/api/automation/v1/ed08056a-b8d8-41ac-adb3-1d8d105e0cef" \
   -H "Authorization: Bearer ${OPENHANDS_API_KEY}" \
   -H "Content-Type: application/json" \
   -d '{"enabled": false}'
@@ -47,7 +70,7 @@ curl -X PATCH "https://app.all-hands.dev/api/automation/v1/c202ca20-60d5-4f5b-9d
 Success (HTTP 200):
 ```json
 {
-  "id": "c202ca20-60d5-4f5b-9d53-3d7308c1d95b",
+  "id": "ed08056a-b8d8-41ac-adb3-1d8d105e0cef",
   "name": "OHTV Workflow Orchestrator",
   "enabled": false,
   ...
@@ -59,45 +82,54 @@ Success (HTTP 200):
 After disabling, verify the automation is disabled:
 
 ```bash
-curl -s "https://app.all-hands.dev/api/automation/v1/c202ca20-60d5-4f5b-9d53-3d7308c1d95b" \
-  -H "Authorization: Bearer ${OPENHANDS_API_KEY}" | jq '.enabled, .name'
+curl -s "https://app.all-hands.dev/api/automation/v1/ed08056a-b8d8-41ac-adb3-1d8d105e0cef" \
+  -H "Authorization: Bearer ${OPENHANDS_API_KEY}" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d['enabled'], d['name'])"
 ```
 
 Should output:
 ```
-false
-"OHTV Workflow Orchestrator"
+False OHTV Workflow Orchestrator
 ```
 
 ## Detection Logic
 
-The orchestrator should check WORKLOG.md for consecutive quiet entries:
+The orchestrator should check WORKLOG.md for consecutive `quiet` status markers:
 
 ```bash
-# Get the last 2 orchestrator entries from WORKLOG.md
-tail -100 WORKLOG.md | grep -E "^### [0-9]{4}-[0-9]{2}-[0-9]{2}.*Orchestrator$|All quiet" | tail -4
+# Get the last two status markers from WORKLOG.md (most recent two orchestrator decisions).
+LAST_TWO_MARKERS=$(grep -oE "orchestrator-status: (spawn|quiet)" WORKLOG.md | tail -2)
+QUIET_COUNT=$(echo "$LAST_TWO_MARKERS" | grep -c "quiet" || true)
+
+# If both of the last two markers are 'quiet', this run would be the 3rd consecutive — disable.
+if [ "$QUIET_COUNT" -eq 2 ]; then
+  echo "Two consecutive quiet periods detected — disabling automation."
+fi
 ```
 
-If the output shows TWO consecutive entries that both contain "All quiet", then disable:
+Example pattern to detect (only the markers matter — English phrasing of the body is irrelevant):
 
-Example pattern to detect:
-```
+```markdown
 ### 2025-05-05 10:30 UTC - Orchestrator
-✅ **All quiet** - No action needed
-### 2025-05-05 11:00 UTC - Orchestrator  
-✅ **All quiet** - No action needed
+✅ Nothing actionable in scope; both slots idle.
+<!-- orchestrator-status: quiet -->
+
+### 2025-05-05 11:00 UTC - Orchestrator
+✅ Still no new work, still both slots idle.
+<!-- orchestrator-status: quiet -->
 ```
+
+After the second `quiet` marker above, the next orchestrator run must auto-disable instead of emitting a third `quiet` marker.
 
 ## WORKLOG Entry When Disabling
 
-After disabling, append to WORKLOG.md:
+After disabling, append to WORKLOG.md. A disable is an action, so the marker is `spawn`:
 
 ```markdown
 ### {timestamp} - Orchestrator
 
 🔒 **Auto-disabled due to inactivity**
 
-Two consecutive quiet periods detected - no work to pick up.
+Two consecutive quiet periods detected — no work to pick up.
 Automation has been disabled to prevent unnecessary runs.
 
 To re-enable:
@@ -107,11 +139,13 @@ To re-enable:
 
 OR run:
 ```bash
-curl -X PATCH "https://app.all-hands.dev/api/automation/v1/c202ca20-60d5-4f5b-9d53-3d7308c1d95b" \
+curl -X PATCH "https://app.all-hands.dev/api/automation/v1/ed08056a-b8d8-41ac-adb3-1d8d105e0cef" \
   -H "Authorization: Bearer ${OPENHANDS_API_KEY}" \
   -H "Content-Type: application/json" \
   -d '{"enabled": true}'
 ```
+
+<!-- orchestrator-status: spawn -->
 
 ---
 ```
@@ -122,7 +156,7 @@ To re-enable the automation (via API or UI):
 
 ### Via API
 ```bash
-curl -X PATCH "https://app.all-hands.dev/api/automation/v1/c202ca20-60d5-4f5b-9d53-3d7308c1d95b" \
+curl -X PATCH "https://app.all-hands.dev/api/automation/v1/ed08056a-b8d8-41ac-adb3-1d8d105e0cef" \
   -H "Authorization: Bearer ${OPENHANDS_API_KEY}" \
   -H "Content-Type: application/json" \
   -d '{"enabled": true}'

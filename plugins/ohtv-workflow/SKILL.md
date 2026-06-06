@@ -121,13 +121,22 @@ New Issue -> Expansion -> Ready -> Prioritized -> Implementation -> PR -> Review
 
 ## Auto-Disable Behavior
 
-The orchestrator automatically disables itself when it detects **two consecutive "quiet" entries** in WORKLOG.md (indicating no new work to pick up). This prevents unnecessary automation runs when the project is at a natural pause point.
+The orchestrator automatically disables itself when it detects **two consecutive "quiet" status markers** in WORKLOG.md (indicating no new work to pick up). This prevents unnecessary automation runs when the project is at a natural pause point.
 
-**Automation ID:** `c202ca20-60d5-4f5b-9d53-3d7308c1d95b`
+Detection uses a stable machine-readable HTML-comment marker that every orchestrator entry MUST emit on its own line:
+
+- `<!-- orchestrator-status: spawn -->` — a worker was spawned (resets the counter)
+- `<!-- orchestrator-status: quiet -->` — no action taken (counts toward auto-disable)
+
+Detection is a literal `grep` for the marker; English phrasing of the entry body ("All quiet", "No worker spawned", etc.) is irrelevant. Trigger source (cron-fired vs user-invoked) is also irrelevant — every entry counts.
+
+**Automation ID:** `ed08056a-b8d8-41ac-adb3-1d8d105e0cef`
+
+> Note: this ID must be updated if the automation is recreated. The disable-automation skill includes a fallback lookup-by-name in case the hardcoded ID becomes stale.
 
 To re-enable after auto-disable:
 - **UI:** https://app.all-hands.dev/automations -> Toggle "OHTV Workflow Orchestrator"
-- **API:** `curl -X PATCH ".../api/automation/v1/c202ca20-60d5-4f5b-9d53-3d7308c1d95b" -d '{"enabled": true}'`
+- **API:** `curl -X PATCH ".../api/automation/v1/ed08056a-b8d8-41ac-adb3-1d8d105e0cef" -d '{"enabled": true}'`
 
 ## Workflow Phases
 
