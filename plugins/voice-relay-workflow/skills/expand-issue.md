@@ -236,6 +236,29 @@ Would you like me to create these as separate issues?
 - Add label: `needs-split`
 - Do NOT add `ready` label
 
+**Issue is hard-blocked by another open issue:**
+
+When investigation reveals that this issue cannot be implemented until one or more *other* open issues land first (missing schema, missing API surface, missing dependency PR, etc.), mark it `on-hold` and document the blockers in a **machine-parseable** comment so the orchestrator's unblock pass can lift the label automatically when the blockers close.
+
+```markdown
+## 🛑 on-hold rationale
+
+This issue is hard-blocked by:
+
+Blocked by #<N1>
+Blocked by #<N2>
+
+[One short paragraph explaining what each blocker provides and how it unblocks this issue.]
+
+Remove `on-hold` and add `ready` once the blockers above close. The orchestrator's unblock pass will do this automatically; manual unblocking is also fine.
+
+_This comment was posted by an AI agent (OpenHands expansion worker) on behalf of @jpshackelford._
+```
+
+- Add label: `on-hold` (and the appropriate `scope:*` / `priority:*` / type labels)
+- Do NOT add `ready` label — the unblock pass adds it when all blockers close
+- The `Blocked by #N` lines (one per blocker, each on its own line) are the **only** form the orchestrator's unblock pass parses. Phrases like "depends on #N" or "once #N lands" in prose are *not* parsed; if you want machine handling, you must include the literal `Blocked by #N` form. (Prose is still fine for humans; just add the machine form as well.)
+
 ## WORKLOG.md Update
 
 Before exiting, update WORKLOG.md on main:
@@ -261,5 +284,6 @@ Before exiting, update WORKLOG.md on main:
 | `ready` | Issue fully expanded, ready for implementation |
 | `needs-info` | Cannot proceed without more information from reporter |
 | `needs-split` | Issue too large, should be broken into smaller issues |
+| `on-hold` | Hard-blocked by one or more *other open* issues. Comment MUST include one `Blocked by #N` line per blocker so the orchestrator's unblock pass can lift the label when all blockers close. Do NOT combine with `ready`. |
 | `bug` | Confirmed bug (if not already labeled) |
 | `enhancement` | Confirmed enhancement (if not already labeled) |
