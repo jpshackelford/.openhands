@@ -91,6 +91,38 @@ gh api graphql -f query='
 
 Review feedback can change the diff's coverage of the original acceptance criteria. An AC item that was covered may now be uncovered (e.g. the reviewer asked you to drop a piece of scope), or vice-versa (a CI fix incidentally covered a gap). The gate verdict from `/implement-issue` Step 9/11 is no longer authoritative.
 
+**Pre-flight: enumerate existing follow-ups (idempotence).** Before walking the AC checklist, build the **existing follow-up set** for the umbrella issue — these are issues filed by the implementation worker, prior review rounds, or any parallel retroactive gate run. The gate's idempotence rule (see `SKILL.md` → "Idempotence (no duplicate follow-ups)") requires you to reuse them, not duplicate.
+
+```bash
+# (a) Follow-ups already recorded in PR #{number}'s body
+gh pr view {number} --repo jpshackelford/voice-relay --json body -q '.body' \
+  | awk '/^## Deferred to follow-ups/{flag=1; next} /^## /{flag=0} flag && /#[0-9]+/' \
+  | grep -oE '#[0-9]+' | sort -u > /tmp/existing-in-body.txt
+
+# (b) Follow-ups filed by parallel runs against the same umbrella issue
+# Replace UMBRELLA below with the linked issue from the trailer.
+UMBRELLA=$(gh pr view {number} --repo jpshackelford/voice-relay --json body -q '.body' \
+  | grep -ioE '(fixes|closes|resolves|refs|part of) #[0-9]+' \
+  | head -1 | grep -oE '[0-9]+')
+gh issue list --repo jpshackelford/voice-relay --state all \
+  --search "in:title \"follow-up to #${UMBRELLA}\"" \
+  --json number -q '.[].number' | sed 's/^/#/' | sort -u > /tmp/existing-by-title.txt
+
+# Union = the existing follow-up set
+sort -u /tmp/existing-in-body.txt /tmp/existing-by-title.txt > /tmp/existing-followups.txt
+```
+
+For each issue in the existing set, read its body so you know which AC item(s) it covers:
+
+```bash
+while read -r ref; do
+  num=${ref#\#}
+  echo "=== $ref ==="
+  gh issue view "$num" --repo jpshackelford/voice-relay --json title,body \
+    -q '.title + "\n---\n" + (.body | .[0:600])'
+done < /tmp/existing-followups.txt
+```
+
 **Procedure:**
 
 1. **Find the linked issue** referenced by an auto-close or non-closing trailer:

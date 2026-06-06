@@ -90,6 +90,29 @@ Before any worker writes an auto-close trailer for issue N into a PR body — **
 | Review (`/address-review`) | After each review round | Review feedback can flip the gate verdict in either direction |
 | Merge (`/prepare-merge`) | Final hard gate before squashing | Last line of defense — block the merge if the gate fails |
 
+### Idempotence (no duplicate follow-ups)
+
+The gate is run **multiple times against the same PR** by design — implementation Step 9 + Step 11, every review round, and the merge worker's hard gate. It can also run concurrently (e.g. a retroactive `## INSTRUCTION:` block and a normal forward tick on the same PR in parallel — the failure mode that produced duplicates [#414–#418](https://github.com/jpshackelford/voice-relay/issues/414) on 2026-06-06).
+
+Before filing any follow-up issue, a worker MUST enumerate the existing follow-up set and reuse it:
+
+1. **Read the PR body's `## Deferred to follow-ups` section** — these are follow-ups recorded by an earlier gate run on this PR. Each is canonical.
+2. **Search by title pattern** for follow-ups filed by parallel runs that have not yet updated the PR body:
+   ```bash
+   gh issue list --repo <repo> --state all \
+     --search 'in:title "follow-up to #<umbrella>"'
+   ```
+3. **Union** of (1) and (2) is the **existing follow-up set**.
+
+When walking the AC checklist:
+
+- For each uncovered AC item: first check whether an issue in the existing set already covers that item (read its body). If yes, **reuse** — do not file a new one.
+- For each previously-filed follow-up whose AC item is now satisfied by the current diff: leave a comment on it noting the gap was closed in this PR, and remove its number from the body's `## Deferred to follow-ups` section. Do **not** auto-close — let the next normal triage tick decide whether the issue is truly superseded or merits a separate close.
+
+When walking finishes, the PR body's `## Deferred to follow-ups` section must list exactly the union of (a) existing follow-ups that still cover an uncovered AC, plus (b) any new follow-ups filed in this run.
+
+The per-worker skill files (`implement-issue.md`, `address-review.md`, `prepare-and-merge.md`) carry the concrete commands. The merge worker's hard gate uses the same pre-flight to **verify** the existing set matches the gap analysis — a discrepancy is a gate failure.
+
 ### Override
 
 The gate may be overridden only by an open `## INSTRUCTION:` block in `WORKLOG.md` (on `main` of the target repo) that explicitly names the PR number, the issue number, and the AC items being waived. The override must be recorded in the cycle's WORKLOG entry and (for merge) in the squash commit body.
@@ -154,6 +177,12 @@ lxa pr list "jpshackelford/voice-relay#<PR_NUMBER>"
 | [Update Project Plan](skills/update-project-plan.md) | `/update-plan` | Reflect and update docs |
 | [Prepare and Merge](skills/prepare-and-merge.md) | `/prepare-merge` | Final merge workflow (hard AC gate, squash, manual close) |
 
+### CI Failure Recovery
+
+| Skill | Trigger | Purpose |
+|-------|---------|---------|
+| [Fix CI Failure](skills/fix-ci-failure.md) | `/fix-ci-failure` | Diagnose + forward-fix or revert CI failures (smoke tests, deploy regressions). Escalates to `needs-human` after 3 failed attempts. |
+
 ### Automation Management
 
 | Skill | Trigger | Purpose |
@@ -168,10 +197,14 @@ lxa pr list "jpshackelford/voice-relay#<PR_NUMBER>"
 | `needs-info` | Cannot proceed without more info from reporter |
 | `needs-split` | Issue too large, should be broken into smaller issues |
 | `blocked` | Blocked by external factors |
+| `needs-human` | Stop dispatching; a human must engage before the orchestrator works on this again |
 | `priority:critical` | Blocking/urgent - do immediately |
 | `priority:high` | Important - do soon |
 | `priority:medium` | Standard priority |
 | `priority:low` | Nice to have |
+| `ci-failure` | Auto-filed when a smoke-test / post-deploy check fails. Routed to `/fix-ci-failure` by the orchestrator decision table. |
+| `ci-fix-attempts:1` / `:2` / `:3` | Counter incremented by `/fix-ci-failure` on each attempt. At `:3` the worker adds `needs-human` and removes `ci-failure`. |
+| `flaky-test` | Set by `/fix-ci-failure` when reruns of the same commit alternate pass/fail; partner with a tracking issue for deflaking. |
 
 ## Auto-Disable Behavior
 
@@ -214,6 +247,16 @@ When merge criteria met (good rating, or 3x acceptable, or acceptable+spurious):
 - Crafts conventional commit message (records gate verdict in body)
 - Squash-merges
 - Linked-issue handling depends on the gate verdict: `Fixes/Closes/Resolves #N` lets GitHub auto-close N; `Refs/Part-of #N` leaves N open while follow-ups drain
+
+### Phase 4 (preemptive): CI Failure Recovery (`/fix-ci-failure`)
+A post-merge smoke-test / deploy check that fails files a `ci-failure` issue (often with auto-rollback already initiated). The orchestrator decision table routes such issues to the implementation slot as **higher priority than normal feature work** — production needs to be unblocked before more changes pile on top.
+
+A `fix-ci-failure` worker:
+- Reads the issue's failed-commit SHA + workflow-run URL + rollback target
+- Classifies: real regression / flaky / test infra / deferred-work dependency
+- Either opens a forward-fix PR (which then runs the normal Phase 1–3 lifecycle), or opens a revert PR, or labels `flaky-test` + files a deflaking tracker
+- Increments `ci-fix-attempts:N` on the issue
+- At `N = 3`, escalates: adds `needs-human`, removes `ci-failure`, posts a summary of all three attempts
 
 ## Merge Criteria
 
