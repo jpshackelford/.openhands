@@ -33,6 +33,42 @@ ed08056a-b8d8-41ac-adb3-1d8d105e0cef
 
 This ID identifies the "OHTV Workflow Orchestrator" automation in OpenHands Cloud. Use this exact ID when making the disable API call.
 
+### 🚨 Do NOT use any other ID
+
+There are stale references to a previous automation ID (`c202ca20-60d5-4f5b-9d53-3d7308c1d95b`, name `"OHTV Workflow Orchestrator (feature branch, disabled)"`) sprinkled throughout `WORKLOG.md` history. **That automation is archived. Disabling it again is a no-op and means the live `ed08056a…` automation will keep firing.**
+
+Rules:
+
+1. **The ONLY trusted source for the automation ID is this skill file.** Do not copy an ID from `WORKLOG.md`, from your conversation context, or from any other historical document — even if the entry looks recent or authoritative.
+2. **Before calling PATCH to disable, GET the automation first and assert two things:**
+   - `id == "ed08056a-b8d8-41ac-adb3-1d8d105e0cef"`
+   - `name == "OHTV Workflow Orchestrator"` (NOT `"OHTV Workflow Orchestrator (feature branch, disabled)"`)
+   - `enabled == true` (if it's already `false`, abort — you'd be disabling something already disabled, which strongly suggests wrong ID)
+3. **If the GET response's `name` includes `(feature branch, disabled)` or `(disabled)`, STOP.** You have the wrong ID. Re-read this skill file and use `ed08056a…`.
+4. **After PATCH, re-GET and confirm `name` and `enabled=false`.** Log both fields to the worklog entry verbatim so a human can audit.
+
+### Pre-disable verification snippet
+
+Run this before the PATCH call:
+
+```bash
+AUTOMATION_ID="ed08056a-b8d8-41ac-adb3-1d8d105e0cef"
+RESPONSE=$(curl -s "https://app.all-hands.dev/api/automation/v1/${AUTOMATION_ID}" \
+  -H "Authorization: Bearer ${OPENHANDS_API_KEY}")
+NAME=$(echo "$RESPONSE" | python3 -c "import json,sys; print(json.load(sys.stdin).get('name',''))")
+ENABLED=$(echo "$RESPONSE" | python3 -c "import json,sys; print(json.load(sys.stdin).get('enabled',''))")
+
+if [ "$NAME" != "OHTV Workflow Orchestrator" ]; then
+  echo "ABORT: Wrong automation. Got name='$NAME'. Expected 'OHTV Workflow Orchestrator'."
+  exit 1
+fi
+if [ "$ENABLED" != "True" ]; then
+  echo "ABORT: Automation already disabled. Got enabled='$ENABLED'."
+  exit 1
+fi
+echo "OK to disable: $AUTOMATION_ID ($NAME, enabled=$ENABLED)"
+```
+
 ### Fallback: Lookup by Name
 
 If the hardcoded ID returns 404 (automation was recreated), look it up by name. The lookup returns the **enabled** automation matching the name:
