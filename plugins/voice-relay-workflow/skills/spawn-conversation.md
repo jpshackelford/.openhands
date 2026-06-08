@@ -24,7 +24,7 @@ Then provide:
 
 ## API Mechanics
 
-### Step 1: Start the Conversation
+### Start the conversation
 
 ```bash
 curl -X POST "https://app.all-hands.dev/api/v1/app-conversations" \
@@ -64,7 +64,7 @@ curl -X POST "https://app.all-hands.dev/api/v1/app-conversations" \
 }
 ```
 
-### Step 2: Poll Until Ready
+### Poll until ready
 
 Poll the start task until status is `READY` or `ERROR`:
 
@@ -79,7 +79,7 @@ curl -s "https://app.all-hands.dev/api/v1/app-conversations/start-tasks/search" 
 
 Poll every 3-5 seconds, timeout after ~90 seconds if not `READY`.
 
-### Step 3: Verify Agent is Running
+### Verify agent is running
 
 Once `READY`, extract `app_conversation_id` and check the conversation:
 
@@ -93,7 +93,7 @@ curl -s "https://app.all-hands.dev/api/v1/app-conversations?ids=CONVERSATION_ID"
 
 Valid execution statuses: `idle`, `running`, `paused`, `waiting_for_confirmation`, `finished`, `error`, `stuck`
 
-### Step 4: Post to Slack
+### Post to Slack
 
 Once verified the conversation started, post a notification to `#proj-voice-relay`:
 
@@ -115,7 +115,7 @@ Addressing feedback on <https://github.com/jpshackelford/voice-relay/pull/5|PR #
 📎 <https://app.all-hands.dev/conversations/abc123|Watch progress>
 ```
 
-### Step 5: Return and Exit
+### Return and exit
 
 Once verified the conversation started and Slack notification sent:
 1. Report the `conversation_url` (e.g., `https://app.all-hands.dev/conversations/{id}`)
