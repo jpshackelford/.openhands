@@ -93,14 +93,14 @@ Combine factors into a priority label:
 
 ## Assessment Process
 
-### Step 1: Gather Ready Issues
+### Gather ready issues
 
 ```bash
 # List all issues with 'ready' label
 gh issue list --repo jpshackelford/voice-relay --label "ready" --json number,title,labels,body --jq '.[] | {number, title, labels: [.labels[].name]}'
 ```
 
-### Step 2: Read Each Issue
+### Read each issue
 
 For each ready issue, read the full content including technical comments:
 
@@ -108,7 +108,7 @@ For each ready issue, read the full content including technical comments:
 gh issue view {number} --repo jpshackelford/voice-relay --comments
 ```
 
-### Step 3: Score Each Issue
+### Score each issue
 
 Create a mental (or written) scorecard:
 
@@ -130,7 +130,7 @@ Issue #10 - Workspace Home
   → Priority: MEDIUM (but good quick win)
 ```
 
-### Step 4: Apply Labels
+### Apply labels
 
 ```bash
 # Apply priority label
@@ -140,7 +140,7 @@ gh issue edit {number} --repo jpshackelford/voice-relay --add-label "priority:hi
 gh issue edit {number} --repo jpshackelford/voice-relay --remove-label "priority:medium" --add-label "priority:high"
 ```
 
-### Step 5: Return Recommendation
+### Return recommendation
 
 After assessing all ready issues, return to the orchestrator with:
 

@@ -96,7 +96,7 @@ The gate may be overridden only by an open `## INSTRUCTION:` block in `WORKLOG.m
 
 ## No prose-form `on-hold` on already-shipped work (cross-cutting rule)
 
-This rule applies to every implementation worker (`/implement-issue`) and to any other worker that ever considers applying the `on-hold` label as an exit action. The procedural detail lives in `skills/implement-issue.md` → Step 1.5.
+This rule applies to every implementation worker (`/implement-issue`) and to any other worker that ever considers applying the `on-hold` label as an exit action. The procedural detail lives in `skills/implement-issue.md` → **Pre-flight: is this issue already done?**.
 
 ### Why this rule exists
 
@@ -115,13 +115,28 @@ When an implementation worker discovers, during pre-flight, that **every non-exe
 3. **NOT** apply `on-hold`.
 4. **NOT** open a PR — even an empty-diff "documentation" PR that points at the shipping commit is wrong here; the close + comment is the artifact.
 
-When ACs are *partially* already shipped, the worker proceeds with the remaining scope. If at Step 9 the gate still has uncovered ACs, the worker files follow-up issues per the existing Closing-Trailer AC Gate rule — and if the follow-ups themselves need to gate a `Refs` trailer, they are deferred via the **machine-form** `Blocked by #<follow-up>` comment so the Unblock Pass can act on them. Prose-form holds are never an acceptable exit.
+When ACs are *partially* already shipped, the worker proceeds with the remaining scope. If the **AC Gate (pre-ready)** still has uncovered ACs, the worker files follow-up issues per the existing Closing-Trailer AC Gate rule — and if the follow-ups themselves need to gate a `Refs` trailer, they are deferred via the **machine-form** `Blocked by #<follow-up>` comment so the Unblock Pass can act on them. Prose-form holds are never an acceptable exit.
 
-The full pre-flight bash + table + closing-comment template live in `skills/implement-issue.md` → Step 1.5.
+The full pre-flight bash + table + closing-comment template live in `skills/implement-issue.md` → **Pre-flight: is this issue already done?**.
 
 ### Override
 
 This rule has no override — a prose-form `on-hold` exit is always wrong because it strands the issue regardless of intent. The `## INSTRUCTION:` mechanism in `WORKLOG.md` can pause work on an issue (e.g., a human says "park this"), but pausing via INSTRUCTION is itself a machine-readable hook the orchestrator already honors; it doesn't require the `on-hold` label and doesn't require the worker to invent a rationale.
+
+## Procedure section naming convention (cross-cutting rule)
+
+Worker skills in this plugin describe procedures with ordered sections. To keep the procedures evolvable without coordinated cross-file renumbering, every worker skill follows this convention:
+
+- **Section headings are stable names, never `Step N:` prefixes.** Example: `### AC Gate (pre-ready)`, not `### Step 9: AC Gate`.
+- **Cross-references point at section names**, not numbers. Example: ``see `/implement-issue` → **AC Gate (pre-ready)** fail path``, not ``see /implement-issue Step 9 fail path``.
+- **A numbered reading-order roadmap may appear once near the top of a long skill** as a pure reading aid. Numbers exist only in that one block; renumbering it is a one-line change.
+- **Within-section ordering** (e.g., sub-bullets in a procedure) may use numbers freely — that's local and self-contained.
+
+### Why
+
+The skill files reference each other heavily (review and merge workers re-run the implementation worker's AC gate; the orchestrator dispatches against `/prepare-merge`'s pre-merge gate; etc.). When a single insertion forced a cross-file Step-number cascade, the convention drifted into half-steps (`Step 1.5`, `Step 8.5`, `Step 0.5`) to localize the damage — but every half-step is still a brittle reference and signals that the next insertion will produce a quarter-step. Section names eliminate the failure mode at the source: insert, reorder, or split sections freely; cross-references unchanged.
+
+This convention applies to every skill in `plugins/voice-relay-workflow/`. New skills (or other plugins copying this pattern) MUST use it; existing skills were migrated to it in [PR #39](https://github.com/jpshackelford/.openhands/pull/39).
 
 ## Worker Tracking via .workflow-state.json
 
@@ -237,7 +252,7 @@ For each review round, a worker conversation:
 
 ### Phase 3: Merge (`/prepare-merge`)
 When merge criteria met (good rating, or 3x acceptable, or acceptable+spurious):
-- Runs the **Closing-Trailer AC Gate as a hard gate** (Step 0 of `/prepare-merge`) — if it fails, do not merge: post a PR comment, drop to draft, log, exit, and let the next orchestrator tick re-route
+- Runs the **Closing-Trailer AC Gate as a hard gate** (the **AC Gate (pre-merge)** section in `/prepare-merge`) — if it fails, do not merge: post a PR comment, drop to draft, log, exit, and let the next orchestrator tick re-route
 - Studies the full diff holistically
 - Updates PR description to reflect final state and the gate verdict
 - Crafts conventional commit message (records gate verdict in body)

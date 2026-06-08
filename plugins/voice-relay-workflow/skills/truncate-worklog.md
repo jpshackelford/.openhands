@@ -94,7 +94,7 @@ These are passive observations, not productive work:
 
 ## Implementation
 
-### Step 1: Parse WORKLOG.md
+### Parse WORKLOG.md
 
 ```bash
 # Read the file
@@ -107,7 +107,7 @@ HEADER=$(echo "$WORKLOG_CONTENT" | sed -n '1,/^## Log$/p')
 ENTRIES_SECTION=$(echo "$WORKLOG_CONTENT" | sed -n '/^## Log$/,$ p' | tail -n +2)
 ```
 
-### Step 2: Parse Individual Entries
+### Parse individual entries
 
 Entries are delimited by `---` and start with `### YYYY-MM-DD HH:MM UTC`:
 
@@ -180,7 +180,7 @@ def is_productive(content: str) -> bool:
     return False
 ```
 
-### Step 3: Calculate Retention Window
+### Calculate retention window
 
 ```python
 def calculate_retention(entries: list[dict], min_productive_hours: int = 6) -> int:
@@ -226,7 +226,7 @@ def calculate_retention(entries: list[dict], min_productive_hours: int = 6) -> i
     return 0  # Keep everything
 ```
 
-### Step 4: Archive Old Entries
+### Archive old entries
 
 ```python
 def archive_entries(entries_to_archive: list[dict], repo_path: str):
@@ -267,7 +267,7 @@ Archived entries from WORKLOG.md for {date}.
         print(f"Archived {len(date_entries)} entries to {archive_file}")
 ```
 
-### Step 5: Rewrite WORKLOG.md
+### Rewrite WORKLOG.md
 
 ```python
 def rewrite_worklog(header: str, kept_entries: list[dict], worklog_path: str):

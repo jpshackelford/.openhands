@@ -31,7 +31,17 @@ Before using this skill, verify merge criteria is met:
 
 ## Steps
 
-### 0. Closing-Trailer AC Gate (REQUIRED, BLOCKS MERGE)
+The procedure below is presented in reading order. Headings are stable names — cross-references from sibling worker skills and from `SKILL.md` target section names rather than step numbers. See `SKILL.md` → "Procedure section naming convention" for the rationale.
+
+1. **AC Gate (pre-merge)** — REQUIRED, BLOCKS MERGE
+2. **Study the PR**
+3. **Update PR description**
+4. **Craft commit message**
+5. **Squash and merge**
+6. **Update the plan**
+7. **Verify and exit**
+
+### AC Gate (pre-merge) — REQUIRED, BLOCKS MERGE
 
 This is the **last line of defense** for the Closing-Trailer Acceptance-Criteria Gate (defined in the plugin's `SKILL.md`). The implementation and review workers should have already converged on the right trailer + follow-ups, but the merge worker MUST verify one more time — review feedback and CI fixes between the last review round and now can flip the verdict.
 
@@ -41,7 +51,7 @@ gh pr view PR_NUMBER --repo jpshackelford/voice-relay --json body -q '.body' \
   | grep -ioE '(fixes|closes|resolves) #[0-9]+' || echo "NO_AUTOCLOSE_TRAILER"
 ```
 
-**If `NO_AUTOCLOSE_TRAILER`:** the gate has nothing to check at merge time. Proceed to Step 1.
+**If `NO_AUTOCLOSE_TRAILER`:** the gate has nothing to check at merge time. Proceed to **Study the PR**.
 
 **For each issue N referenced by an auto-close trailer:**
 
@@ -60,7 +70,7 @@ Walk N's `## Acceptance Criteria` checklist item-by-item. Apply the gate's stand
 
 | Result | Action |
 |--------|--------|
-| Every non-exempt AC item is covered by the diff | ✅ Gate passes — proceed to Step 1. Record the verdict in the squash commit body. |
+| Every non-exempt AC item is covered by the diff | ✅ Gate passes — proceed to **Study the PR**. Record the verdict in the squash commit body. |
 | Any non-exempt AC item is uncovered, and no override `## INSTRUCTION:` block exists in `WORKLOG.md` for this PR + issue | ❌ Gate fails — DO NOT merge. See fail-path below. |
 
 **Gate fail-path:**
@@ -74,7 +84,7 @@ Walk N's `## Acceptance Criteria` checklist item-by-item. Apply the gate's stand
 
 **Override:** the merge worker may bypass the gate only if `WORKLOG.md` contains an open `## INSTRUCTION:` block that explicitly names this PR number, the issue number, and the AC items being waived. Record the override in the squash commit body (`Gate override per WORKLOG INSTRUCTION: ...`) and in the cycle's WORKLOG entry.
 
-### 1. Study the PR Holistically
+### Study the PR
 
 Don't just look at the latest changes - understand the full picture:
 
@@ -91,7 +101,7 @@ Think about:
 - How did it evolve through review?
 - Are there any loose ends?
 
-### 2. Update PR Description
+### Update PR description
 
 The PR description should reflect the final state, not the initial proposal. Update it to include:
 
@@ -115,7 +125,7 @@ The PR description should reflect the final state, not the initial proposal. Upd
 gh pr edit PR_NUMBER --body "new description"
 ```
 
-### 3. Craft Conventional Commit Message
+### Craft commit message
 
 For squash-merge, craft a good commit message:
 
@@ -155,7 +165,7 @@ Implements event parsing from Minio object storage:
 PR: #42
 ```
 
-### 4. Squash and Merge
+### Squash and merge
 
 ```bash
 gh pr merge PR_NUMBER --repo jpshackelford/voice-relay --squash \
@@ -168,7 +178,7 @@ gh pr merge PR_NUMBER --repo jpshackelford/voice-relay --squash \
 PR: #42"
 ```
 
-### 5. Update the Plan
+### Update the plan
 
 After merge, update the project documentation:
 
@@ -187,7 +197,7 @@ git commit -m "docs: mark {item} complete after PR #{number}"
 git push
 ```
 
-### 6. Verify and Exit
+### Verify and exit
 
 ```bash
 # Verify the merge succeeded

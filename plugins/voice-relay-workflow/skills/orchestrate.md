@@ -95,7 +95,7 @@ The orchestrator can run **up to 7 workers simultaneously** across three slot ty
 └──────────────────────────────────────────────────────────────────┘
 ```
 
-## Step 0: Ensure Tools Are Installed
+## Ensure tools are installed
 
 Before anything else, ensure `lxa` and `ohtv` are available:
 
@@ -111,7 +111,7 @@ lxa repo add jpshackelford/voice-relay 2>/dev/null || true
 ohtv sync --since $(date -u -d '4 hours ago' +%Y-%m-%dT%H:%M:%S) --quiet
 ```
 
-## Step 0.5: Housekeeping - Truncate Worklog
+## Housekeeping: truncate worklog
 
 If the worklog is getting large, archive old entries to keep the file manageable and ensure agents have focused context on recent productive work.
 
@@ -241,7 +241,7 @@ This ensures:
 
 See `/truncate-worklog` skill for the full algorithm and edge case handling.
 
-## Step 1: Check for Human Instructions
+## Check for human instructions
 
 **This is the first thing the orchestrator does after setup.**
 
@@ -285,9 +285,9 @@ Received instruction:
 
 ### If No Instructions Found
 
-Proceed with normal workflow (Step 2 onwards).
+Proceed with normal workflow (continue with **Check for active workers** and below).
 
-## Step 2: Check for Active Workers
+## Check for active workers
 
 Load `.workflow-state.json` and verify which workers are still running via API.
 
@@ -1115,7 +1115,7 @@ Prompt: |
   2. **MIGRATION CHECK** if schema-touching: migrations exist, are additive/safe,
      post-deploy steps noted in the PR body.
   3. **RUN THE CLOSING-TRAILER AC GATE — HARD GATE, BLOCKS MERGE** (see plugin SKILL.md
-     and `/prepare-merge` Step 0):
+     and `/prepare-merge` → **AC Gate (pre-merge)**):
      - Extract auto-close trailers from the PR body
        (`Fixes/Closes/Resolves #N` — if none, the gate has nothing to check).
      - For each linked issue N, walk its ## Acceptance Criteria item-by-item vs
