@@ -800,12 +800,17 @@ This rule complements [Auto-Disable on Consecutive Quiet Periods](#auto-disable-
 
 ### Implementation Slot (1 max)
 
+Evaluated **top-to-bottom** — `ci-failure` issues preempt normal feature work because they often block production deploy. A `ci-failure` issue is actionable when it carries the `ci-failure` label, does NOT carry `needs-human`, and has not yet reached the attempt threshold (`ci-fix-attempts:3`).
+
 | Condition | Action |
 |-----------|--------|
-| `IMPL_AVAILABLE = 0` | Wait (implementation worker running) |
+| `IMPL_AVAILABLE = 0` | Wait (implementation or fix-ci-failure worker running) |
+| `IMPL_AVAILABLE = 1` + open `ci-failure` issue (without `needs-human`, with `ci-fix-attempts:<3` or no counter) | Spawn **fix-ci-failure worker** (oldest first) — see `/fix-ci-failure` |
 | `IMPL_AVAILABLE = 1` + ready issues with priority | Spawn **impl worker** for highest priority ready issue |
 | `IMPL_AVAILABLE = 1` + ready issues, no priority | Run `/assess-priority` inline, then spawn impl worker |
-| `IMPL_AVAILABLE = 1` + no ready issues | Nothing to implement (wait for expansion) |
+| `IMPL_AVAILABLE = 1` + no ready issues + no actionable ci-failure | Nothing to implement (wait for expansion) |
+
+> **Escalation:** the `fix-ci-failure` worker increments `ci-fix-attempts:N` on each attempt. When the counter reaches 3 the worker adds `needs-human` and removes `ci-failure`, taking the issue out of this row's dispatch eligibility. See `/fix-ci-failure` for the full escalation policy. Treat a `ci-failure` issue that ALREADY carries `needs-human` the same as any other `needs-human` issue: skip silently per the existing convention.
 
 ### Review Slots (up to 2 parallel)
 
@@ -1146,6 +1151,67 @@ Prompt: |
 
 Plugins: github:jpshackelford/.openhands/plugins/voice-relay-workflow@add-voice-relay-workflow-plugin
 PR Number: {number}
+```
+
+### Fix-CI-Failure Worker
+
+**Worker Type:** `fix-ci-failure`
+**Slot:** Implementation slot (preempts normal feature work — see Decision Tree)
+
+```
+Repository: jpshackelford/voice-relay
+Title: [Fix CI] Issue #{issue_number} (attempt {attempt_n})
+Prompt: |
+  You are investigating CI failure issue #{issue_number} for the voice-relay project.
+  This is **attempt {attempt_n} of 3**. After attempt 3, the next dispatch escalates
+  to `needs-human` instead of running this worker.
+
+  **ISSUE TO INVESTIGATE:**
+  - Issue: #{issue_number} - {issue_title}
+  - URL: https://github.com/jpshackelford/voice-relay/issues/{issue_number}
+  - Current attempt counter label: `ci-fix-attempts:{prev_attempts}` (or none if first attempt)
+
+  **PRODUCTION CONTEXT (brief):**
+  - App auto-deploys to vr.chorecraft.net on merge to main.
+  - Smoke-test failures auto-rollback to the prior commit, but the failing
+    commit stays on main — the NEXT merge re-deploys it.
+  - This is a forward-fix worker, not a merge worker; you open a PR or you
+    diagnose-and-comment, then exit.
+
+  **Procedure (high level):**
+
+  1. Read the issue body + recent comments. Extract the failed commit SHA,
+     workflow-run URL, and rollback target (if any).
+  2. Pull the workflow logs and any smoke-test artifacts.
+  3. **Classify the failure mode:**
+     - Real regression → forward fix (open PR) or revert (open PR).
+     - Flaky test → re-run, verify, label `flaky-test`, file or find a
+       deflaking tracking issue.
+     - Test infra issue → comment with evidence; in-scope infra fix gets
+       a `chore(ci):` PR, out-of-scope gets `needs-human`.
+     - Deferred-work dependency → propose temporary test disable PR, or
+       propose revert.
+  4. Whichever path you take:
+     - Increment the attempt counter label on issue #{issue_number}:
+       remove `ci-fix-attempts:{prev_attempts}` (if present), add
+       `ci-fix-attempts:{attempt_n}`.
+     - If `{attempt_n}` reaches 3 AND the fix didn't land cleanly, add
+       `needs-human` and remove `ci-failure`, and post a summary comment
+       listing all three attempts.
+     - Open the fix PR (if applicable) with `Fixes #{issue_number}` so the
+       normal lifecycle (AC gate, review, merge) takes over.
+  5. Update WORKLOG.md on main with the attempt entry.
+     ⚠️ WORKLOG.md changes ALWAYS go directly to main, never in feature branches/PRs.
+  6. Exit. Do not loop. Each tick is one attempt.
+
+  **For the full procedure including failure-mode triage details, revert vs
+  forward-fix decision rules, and the attempt-counter mechanics, invoke
+  `/fix-ci-failure`.**
+
+Plugins: github:jpshackelford/.openhands/plugins/voice-relay-workflow@add-voice-relay-workflow-plugin
+Issue Number: {issue_number}
+Worker Type: fix-ci-failure
+Attempt: {attempt_n}
 ```
 
 ## WORKLOG.md Updates
