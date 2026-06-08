@@ -60,11 +60,11 @@ Read the issue description AND every comment. The technical-approach comment (ad
 Before branching, walk the AC checklist from **Understand the issue** against the current `main`. The expansion → ready → implementation pipeline is asynchronous; by the time you're dispatched, another worker (or a prior tick on a sibling PR) may have already shipped the code. See `SKILL.md` → "No prose-form `on-hold` on already-shipped work" for the cross-cutting rule.
 
 ```bash
-# Pull latest main + read the shipping commit history for this scope
-git -C voice-relay fetch origin main
-git -C voice-relay log --oneline -20 origin/main -- {hint_paths_from_technical_approach}
+# From inside the voice-relay checkout (same cwd as the rest of this procedure):
+git fetch origin main
+git log --oneline -20 origin/main -- {hint_paths_from_technical_approach}
 
-# Also enumerate any PRs that already reference this issue (open or merged)
+# Also enumerate any PRs that already reference this issue (open or merged):
 gh pr list --repo jpshackelford/voice-relay --state all \
   --search "in:body OR in:title '#{issue_number}'" \
   --json number,state,mergeCommit,title,body,closingIssuesReferences
