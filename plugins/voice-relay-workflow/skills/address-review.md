@@ -104,6 +104,41 @@ gh api graphql -f query='
 
 ### Re-run AC Gate (REQUIRED)
 
+**Pre-flight: enumerate existing follow-ups (idempotence).** Before walking the AC checklist, build the **existing follow-up set** for the umbrella issue — these are issues filed by the implementation worker, prior review rounds, or any parallel retroactive gate run. The gate's idempotence rule (see `SKILL.md` → "Idempotence (no duplicate follow-ups)") requires you to reuse them, not duplicate.
+
+```bash
+PR_NUMBER=$(gh pr view --json number -q .number)
+
+# (a) Follow-ups already recorded in this PR's body
+gh pr view "$PR_NUMBER" --repo jpshackelford/voice-relay --json body -q '.body' \
+  | awk '/^## Deferred to follow-ups/{flag=1; next} /^## /{flag=0} flag && /#[0-9]+/' \
+  | grep -oE '#[0-9]+' | sort -u > /tmp/existing-in-body.txt
+
+# (b) Follow-ups filed by parallel runs against the same umbrella issue
+UMBRELLA=$(gh pr view "$PR_NUMBER" --repo jpshackelford/voice-relay --json body -q '.body' \
+  | grep -ioE '(fixes|closes|resolves|refs|part of) #[0-9]+' \
+  | head -1 | grep -oE '[0-9]+')
+gh issue list --repo jpshackelford/voice-relay --state all \
+  --search "in:title \"follow-up to #${UMBRELLA}\"" \
+  --json number -q '.[].number' | sed 's/^/#/' | sort -u > /tmp/existing-by-title.txt
+
+# Union = the existing follow-up set
+sort -u /tmp/existing-in-body.txt /tmp/existing-by-title.txt > /tmp/existing-followups.txt
+```
+
+For each issue in the existing set, read its body so you know which AC item(s) it covers:
+
+```bash
+while read -r ref; do
+  num=${ref#\#}
+  echo "=== $ref ==="
+  gh issue view "$num" --repo jpshackelford/voice-relay --json title,body \
+    -q '.title + "\n---\n" + (.body | .[0:600])'
+done < /tmp/existing-followups.txt
+```
+
+You now have the **existing follow-up set**. Use it in the fail-path below: reuse before filing.
+
 Review feedback can change the diff's coverage of the original acceptance criteria. An AC item that was covered may now be uncovered (e.g. the reviewer asked you to drop a piece of scope), or vice-versa (a CI fix incidentally covered a gap). The gate verdict from `/implement-issue` → **AC Gate (pre-ready)** / **AC Gate (re-run after CI)** is no longer authoritative.
 
 **Procedure:**
