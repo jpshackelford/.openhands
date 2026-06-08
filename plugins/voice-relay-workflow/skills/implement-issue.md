@@ -37,6 +37,59 @@ Read the issue description AND every comment. The technical-approach comment (ad
 
 **Identify the AC checklist now.** Find the `## Acceptance Criteria` section in the issue body and note every item. These are what the gate at Step 9 will check.
 
+### Step 1.5: Pre-flight — is this issue already done?
+
+Before branching, walk the AC checklist from Step 1 against the current `main`. The expansion → ready → implementation pipeline is asynchronous; by the time you're dispatched, another worker (or a prior tick on a sibling PR) may have already shipped the code. See `SKILL.md` → "No prose-form `on-hold` on already-shipped work" for the cross-cutting rule.
+
+```bash
+# Pull latest main + read the shipping commit history for this scope
+git -C voice-relay fetch origin main
+git -C voice-relay log --oneline -20 origin/main -- {hint_paths_from_technical_approach}
+
+# Also enumerate any PRs that already reference this issue (open or merged)
+gh pr list --repo jpshackelford/voice-relay --state all \
+  --search "in:body OR in:title '#{issue_number}'" \
+  --json number,state,mergeCommit,title,body,closingIssuesReferences
+```
+
+Walk each non-exempt AC item against the code on `main`:
+
+| Finding | Exit action |
+|---|---|
+| **Every** non-exempt AC is already satisfied by code merged to `main` | **Close the issue directly** (see "Already-done exit" below). Do not branch. Do not open a PR. Do not apply `on-hold`. |
+| **Some** ACs satisfied, others still need work | Proceed to Step 2 with the still-open ACs as your scope. In the PR you eventually open, carve the satisfied items out via the normal Step 9 follow-up procedure or note them as "already shipped via #PR" in the body's gate-verdict line. |
+| **No** ACs satisfied yet | Proceed to Step 2 normally. |
+
+#### Already-done exit (no PR opened)
+
+When all non-exempt ACs are already on `main`:
+
+1. **Close the issue** with `--reason completed`.
+2. **Post a comment first** listing each AC and the PR/commit (or chain of PRs) that satisfied it, with permalinks. Use the template below.
+3. **Do NOT** apply `on-hold`. Prose-form `on-hold` is invisible to the orchestrator's Unblock Pass (see `orchestrate.md`) and will strand the issue in policy-tracked limbo — the failure mode that produced [voice-relay #446](https://github.com/jpshackelford/voice-relay/issues/446) (the 17:25Z worker recognized the work was already shipped via PR #450 + chain #452 → #449, but applied a prose `on-hold` instead of closing, so subsequent unblock passes correctly left it alone and the issue sat open for hours until a human caught it).
+4. **Do NOT** open a duplicate PR — see voice-relay PR #451, which raced PR #450 and had to be closed.
+5. Write a WORKLOG entry on `main` recording the no-op outcome and the close link. Exit (skip Steps 2–14).
+
+Closing-comment template:
+
+```markdown
+## ✅ Closing — all ACs shipped
+
+All acceptance criteria from this issue are landed on `main`:
+
+- **AC #1** — shipped via #<PR> (`<sha>`, <date>). <one-line evidence>
+- **AC #2** — shipped via #<PR> (`<sha>`, <date>). <one-line evidence>
+- …
+
+<one-paragraph context for why a worker was still dispatched, if non-obvious — e.g., racy ready labeling, prior prose-form hold being lifted, etc.>
+
+_This comment was created by an AI agent (OpenHands) on behalf of @jpshackelford._
+```
+
+#### When ACs are *partially* already shipped
+
+If the diff for the remaining scope ends up satisfying **all** the still-open ACs, the AC gate at Step 9 will produce a `Fixes #N` trailer normally. If the diff still leaves some ACs uncovered, follow the normal Step 9 follow-up procedure. Never use prose-form `on-hold` — if you need to defer remaining ACs to follow-up issues, the convention from `expand-issue.md` ("Issue is hard-blocked") applies: add a machine-form `Blocked by #<follow-up>` comment on the issue so the next Unblock Pass can lift the hold automatically when the follow-up closes.
+
 ### Step 2: Branch from up-to-date main
 
 ```bash

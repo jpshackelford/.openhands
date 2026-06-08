@@ -94,6 +94,35 @@ Before any worker writes an auto-close trailer for issue N into a PR body — **
 
 The gate may be overridden only by an open `## INSTRUCTION:` block in `WORKLOG.md` (on `main` of the target repo) that explicitly names the PR number, the issue number, and the AC items being waived. The override must be recorded in the cycle's WORKLOG entry and (for merge) in the squash commit body.
 
+## No prose-form `on-hold` on already-shipped work (cross-cutting rule)
+
+This rule applies to every implementation worker (`/implement-issue`) and to any other worker that ever considers applying the `on-hold` label as an exit action. The procedural detail lives in `skills/implement-issue.md` → Step 1.5.
+
+### Why this rule exists
+
+The expansion → ready → implementation pipeline is asynchronous. By the time an implementation worker is dispatched against issue N, code merged by a sibling PR or a prior tick may have already satisfied N's acceptance criteria on `main`. The worker must do something about that — but what?
+
+The orchestrator's Unblock Pass (added in #38) only lifts an `on-hold` label when it can parse a machine-form `Blocked by #N` comment whose referenced blockers are all closed. Prose like "depends on #N once it lands" or "shipped via #M but the e2e flip is tracked in #K" is deliberately ignored, so that long-form discussion in comments doesn't accidentally trigger unblocking (see `orchestrate.md` → "Unblock Pass" rationale). The cost of that safety property: an `on-hold` label applied with prose-only rationale is **un-liftable by the orchestrator**.
+
+That made [voice-relay #446](https://github.com/jpshackelford/voice-relay/issues/446) sit open for hours after every one of its acceptance criteria had shipped to `main` (server-side via PR #450, e2e flip via PR #454, downstream tracker #433 closed). The 17:25Z implementation worker correctly recognized the work was already done and correctly avoided opening a duplicate PR (PR #451 had already raced #450 earlier — that lesson held). But its exit was wrong: it applied `on-hold` with a prose rationale instead of closing the issue, and subsequent Unblock Pass ticks left the label in place exactly as designed.
+
+### The rule
+
+When an implementation worker discovers, during pre-flight, that **every non-exempt acceptance-criterion item is already satisfied by code merged to `main`**, it MUST:
+
+1. **Close the issue** with `--reason completed`, attributed to the shipping PR(s).
+2. **Post an evidence comment first** listing each AC and the PR/commit that delivered it.
+3. **NOT** apply `on-hold`.
+4. **NOT** open a PR — even an empty-diff "documentation" PR that points at the shipping commit is wrong here; the close + comment is the artifact.
+
+When ACs are *partially* already shipped, the worker proceeds with the remaining scope. If at Step 9 the gate still has uncovered ACs, the worker files follow-up issues per the existing Closing-Trailer AC Gate rule — and if the follow-ups themselves need to gate a `Refs` trailer, they are deferred via the **machine-form** `Blocked by #<follow-up>` comment so the Unblock Pass can act on them. Prose-form holds are never an acceptable exit.
+
+The full pre-flight bash + table + closing-comment template live in `skills/implement-issue.md` → Step 1.5.
+
+### Override
+
+This rule has no override — a prose-form `on-hold` exit is always wrong because it strands the issue regardless of intent. The `## INSTRUCTION:` mechanism in `WORKLOG.md` can pause work on an issue (e.g., a human says "park this"), but pausing via INSTRUCTION is itself a machine-readable hook the orchestrator already honors; it doesn't require the `on-hold` label and doesn't require the worker to invent a rationale.
+
 ## Worker Tracking via .workflow-state.json
 
 Active workers are tracked in `.workflow-state.json` (machine-readable) and logged to `WORKLOG.md` (human-readable):
