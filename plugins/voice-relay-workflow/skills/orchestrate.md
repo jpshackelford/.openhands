@@ -812,9 +812,41 @@ This rule complements [Auto-Disable on Consecutive Quiet Periods](#auto-disable-
 | Condition | Action |
 |-----------|--------|
 | `REVIEW_AVAILABLE = 0` | Both review slots full, wait |
+| PR is draft + not stuck + CI not failing | **Promote to ready inline** (`gh pr ready <N>`) — does not consume a review slot; the next tick will pick it up as a normal PR |
 | `REVIEW_AVAILABLE > 0` + PR needs review (💬 > 0) | Spawn **review worker** |
 | `REVIEW_AVAILABLE > 0` + PR ready to merge | Spawn **merge worker** |
-| **PR STUCK** (blocked/needs-human/needs-info) | Skip this PR, check for other PRs needing review |
+| **PR STUCK** (`on-hold`/`needs-human`/`blocked`/`needs-info`) | Skip this PR, check for other PRs needing review |
+
+#### Promoting a draft PR to ready
+
+In the normal happy path, the implementation worker creates a DRAFT PR, waits for CI to go green, runs the Closing-Trailer AC Gate, and **as its terminal step** moves the PR to ready itself (see `implement-issue.md` step 6 and the impl-worker prompt below). The orchestrator never has to touch the PR's draft state.
+
+There are two cases where a draft PR sits in front of the orchestrator with no worker driving it:
+
+1. **A human-authored draft** (typical when the maintainer opens a PR directly without going through `/implement-issue`).
+2. **An impl worker that exited before flipping to ready** (e.g., a hard crash; the conversation is no longer running but the PR is stuck in draft).
+
+In both cases the orchestrator unblocks the PR by promoting it inline — a single `gh pr ready <N>` call, no spawned worker, no slot consumed. The pr-review bot then fires on the next webhook tick and the existing review-slot rows route the resulting `💬 > 0` PR through the normal review worker. **The author opts out of auto-promotion by adding the `on-hold` label** (same single mechanism the rest of the workflow already uses for "do not pick this up"); the row above explicitly excludes any stuck PR.
+
+```bash
+# Discover open PRs with their state in one call
+gh pr list --repo jpshackelford/voice-relay --state open \
+  --json number,isDraft,labels,statusCheckRollup \
+  --jq '.[] | select(.isDraft == true)
+              | select((.labels | map(.name)) as $l
+                       | (["on-hold","needs-human","blocked","needs-info"]
+                          | map(. as $n | $l | index($n)) | all(. == null)))
+              | select(([.statusCheckRollup[]?.conclusion]
+                        | map(. == "FAILURE") | any) | not)
+              | .number' | while read -r N; do
+  echo "Promoting draft PR #$N to ready"
+  gh pr ready "$N" --repo jpshackelford/voice-relay
+done
+```
+
+CI status semantics: "not failing" means no required check has `conclusion: FAILURE`. Green and pending both promote — pending CI on a draft is the same as pending CI on a ready PR for the next tick's purposes, and the maintainer can always re-draft if they decide they're not done.
+
+Counts as a productive tick (reset `quiet_ticks` to 0) — promoting a draft is a state change the next tick will act on, so a quiet-tick burn would be incorrect.
 
 ### Combined Decision Flow
 
@@ -838,18 +870,24 @@ This rule complements [Auto-Disable on Consecutive Quiet Periods](#auto-disable-
 │               │         └─ NO  → /assess-priority, then spawn  │
 │               └─ NO  → Nothing to implement                     │
 │                                                                  │
-│  3. CHECK REVIEW SLOTS (0-2 available)                          │
+│  3. PROMOTE NON-STUCK DRAFT PRs (inline, no slot)               │
+│     ├─ For each draft PR with no on-hold/needs-human/blocked    │
+│     │   /needs-info label and CI not failing:                   │
+│     │     └─ gh pr ready <N>  (mark this tick productive)       │
+│                                                                  │
+│  4. CHECK REVIEW SLOTS (0-2 available)                          │
 │     ├─ List open PRs needing review (💬 > 0 or merge-ready)     │
-│     ├─ Skip any STUCK PRs (blocked/needs-human)                 │
+│     ├─ Skip any STUCK PRs (on-hold/blocked/needs-human/         │
+│     │   needs-info) and any still-draft PRs                     │
 │     ├─ For each available slot (up to 2):                       │
 │     │     └─ Spawn review/merge worker for next PR              │
 │     └─ Log how many spawned                                     │
 │                                                                  │
-│  4. UPDATE .workflow-state.json with new workers                │
+│  5. UPDATE .workflow-state.json with new workers                │
 │                                                                  │
-│  5. LOG STATUS TO WORKLOG.md                                    │
+│  6. LOG STATUS TO WORKLOG.md                                    │
 │                                                                  │
-│  6. COMMIT state changes and EXIT                               │
+│  7. COMMIT state changes and EXIT                               │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
