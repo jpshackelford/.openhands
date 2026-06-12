@@ -819,9 +819,16 @@ The worklog is read by humans skimming for "what happened and what's next", and 
 **Each entry MUST contain (in this order):**
 
 1. `### YYYY-MM-DD HH:MM UTC - Orchestrator` header
-2. One bold action line with a status emoji — e.g. `🚀 **Launched: Testing Worker**`, `✅ **All quiet**`, `🔒 **Auto-disabled**`, `📋 **Following human instructions**`
+2. One bold action line with a status emoji — e.g. `🚀 **Launched: Testing Worker**`, `✅ **All quiet**`, `🔒 **Auto-disabled**`, `📋 **Following Human Instructions**`
 3. 1–3 short context bullets (what was spawned, why, link to the spawned conversation)
-4. **Active Workers** table (always present; use a single `_None._` row if empty) — this is how the next orchestrator finds running conv IDs
+4. **Active Workers** section — this is how the next orchestrator finds running conv IDs. Render the table when workers are running, and replace it with a single `_None._` line under the heading when both slots are empty (skim-faster, and Step 2's table-row grep stays indifferent):
+
+   ```markdown
+   **Active Workers:**
+
+   _None._
+   ```
+
 5. **Current State** — 3–6 bullets summarizing open PRs, ready/expansion-needing issues, and any blocked items. This is what a human skimming sees first.
 
 **Do NOT include in entries:**
@@ -867,11 +874,13 @@ Testing [PR #42](https://github.com/{REPOSITORY}/pull/42): {title}
 |-----------|-------------|
 | Spawned an expansion worker | `🔍 **Launched: Expansion Worker**` |
 | Spawned implementation | `🛠 **Launched: Implementation Worker**` |
-| Spawned 2 workers in parallel | `🚀 **Launched: 2 workers in parallel**` (list both under one bullet group) |
+| Spawned 2 workers in parallel | `🚀 **Launched: 2 workers in parallel**` (list both under one bullet group; add a row in **Active Workers** for _each_ worker so the next wake-up can poll both conv IDs) |
 | PR worker still running, slot busy | `⏳ **PR slot busy**` (1 bullet pointing at the conversation) |
 | Nothing to do this cycle | `✅ **All quiet**` (1 bullet explaining what's parked and why) |
 | Auto-disabled after 2 quiet cycles | `🔒 **Auto-disabled due to inactivity**` — see `disable-automation` skill |
-| Acting on a human `## INSTRUCTION:` | `📋 **Following human instructions**` (1 bullet stating what was done) |
+| Acting on a human `## INSTRUCTION:` | `📋 **Following Human Instructions**` (1 bullet stating what was done) |
+
+The 🔍/🛠/📋 indicators above are also recognized by `truncate-worklog.md`'s productive-entry classifier, so single-worker expansion/implementation spawns and instruction-follow cycles correctly anchor the 6-hour retention window. If you add a new variant cue, mirror the indicator string into `truncate-worklog.md`'s `productive_indicators` list and the indicator table.
 
 A worker that completes can append its own short closing entry in the same shape — header, one ✅ line, 2–4 bullets, no table.
 
@@ -880,11 +889,16 @@ A worker that completes can append its own short closing entry in the same shape
 Before logging an "All quiet" entry, check whether the previous orchestrator entry was also "All quiet". If yes, this would be the second consecutive quiet cycle → disable the automation instead of logging another quiet entry.
 
 ```bash
-# How many of the last 2 orchestrator entries were quiet?
+# Of the last 2 orchestrator entries, how many were quiet?
+# Each entry contributes 1-2 matching lines: 1 header (`### … Orchestrator`)
+# plus 1 body line if the entry contains "All quiet". So the last 4 matching
+# lines cover the last 2 entries; if 2 of those 4 are "All quiet" body lines,
+# both of the last 2 entries were quiet → second consecutive quiet → disable.
 LAST=$(grep -E "(^### .*Orchestrator|All quiet)" WORKLOG.md | tail -4)
 QUIET_COUNT=$(echo "$LAST" | grep -c "All quiet")
-if [ "$QUIET_COUNT" -ge 1 ] && echo "$LAST" | tail -2 | grep -q "All quiet"; then
-  # Previous entry was quiet → invoke /disable-automation, log a 🔒 entry, exit
+if [ "$QUIET_COUNT" -ge 2 ]; then
+  # Both of the last 2 entries were quiet → invoke /disable-automation,
+  # log a 🔒 entry, exit.
   :
 fi
 ```
