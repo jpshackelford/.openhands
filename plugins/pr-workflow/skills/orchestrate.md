@@ -16,6 +16,17 @@ Generic PR workflow orchestration. This skill is designed to run as a scheduled 
 - Enabled phases (manual testing, self-review, etc.)
 - Plugin source for spawned workers
 
+## Worklog brevity guardrail (read this first)
+
+WORKLOG.md exists for two readers: a human skimming "what happened and what's next", and the next orchestrator wake-up scraping a small set of facts (active conv IDs, last cycle's outcome, standing instructions). Anything beyond that is noise.
+
+Each orchestrator entry MUST be **~10-20 lines**, not 50-100. See [WORKLOG.md Updates](#worklogmd-updates) below for the exact contract. Concretely:
+
+- **Do** include: action line, 1-3 context bullets, Active Workers table, Current State bullets.
+- **Don't** include: decision-tree traces, "what changed since last cycle" prose, prophecy about likely next transitions, repeated re-enable instructions, plugin paths, housekeeping commentary.
+
+If you find yourself writing a numbered "1. Read config, 2. Check workers..." rationale into WORKLOG.md, stop — that belongs in your scratchpad / stdout log, not on disk.
+
 ## Usage
 
 ```
@@ -799,254 +810,110 @@ PR Number: {number}
 
 ## WORKLOG.md Updates
 
-After each orchestrator run, append a status update to `WORKLOG.md` in the repo root.
+After each orchestrator run, append **one short status entry** to `WORKLOG.md` on `main`.
 
-### Log Entry Format with Active Workers Table
+### Brevity contract
 
-Include the conversation ID (first 7 chars) in the Active Workers table:
+The worklog is read by humans skimming for "what happened and what's next", and by the next orchestrator wake-up scraping a small set of facts. Keep entries tight — target **10-20 lines**, not 50-100.
 
-```markdown
-### 2025-05-05 10:30 UTC - Orchestrator
+**Each entry MUST contain (in this order):**
 
-**Active Workers:**
-| Conv ID | Type | Working On | Status |
-|---------|------|------------|--------|
-| `abc1234` | expansion | Issue #9 - Scope messages | running |
-| `def5678` | implementation | Issue #7 - WebSocket | running |
+1. `### YYYY-MM-DD HH:MM UTC - Orchestrator` header
+2. One bold action line with a status emoji — e.g. `🚀 **Launched: Testing Worker**`, `✅ **All quiet**`, `🔒 **Auto-disabled**`, `📋 **Following human instructions**`
+3. 1–3 short context bullets (what was spawned, why, link to the spawned conversation)
+4. **Active Workers** table (always present; use a single `_None._` row if empty) — this is how the next orchestrator finds running conv IDs
+5. **Current State** — 3–6 bullets summarizing open PRs, ready/expansion-needing issues, and any blocked items. This is what a human skimming sees first.
 
-**Current State:**
-- [PR #42](https://github.com/{REPOSITORY}/pull/42): `oC green ready` 💬2
-- Issues needing expansion: #11, #12
-- Ready issues: #9 (priority:high), #10 (priority:medium)
+**Do NOT include in entries:**
 
-**Action Taken:**
-✅ Both worker slots occupied - no action needed
+- Decision-tree traces / numbered "1. Read config, 2. Check workers..." rationale — that's scratchpad, not log
+- "What changed since last cycle" prose diffs — the next wake-up computes state fresh from `gh`
+- "Likely transitions to watch for" prophecy — the next wake-up decides based on actual state
+- Repeated re-enable curl snippets, plugin paths, sandbox status codes
+- Housekeeping commentary on why truncation was deferred (just truncate or don't)
+- Restating the standing `## INSTRUCTION:` rules every cycle
 
----
-```
+Use `lxa pr list` shorthand (`oCR green ready 💬2`) instead of paragraphs to describe PR state.
 
-### When Spawning a Worker
+### Template (one entry covers all cases)
 
 ```markdown
 ### 2025-05-05 14:00 UTC - Orchestrator
 
+🚀 **Launched: Testing Worker**
+
+Testing [PR #42](https://github.com/{REPOSITORY}/pull/42): {title}
+- CI green, no manual test results yet
+- Conversation: https://app.all-hands.dev/conversations/{full-conv-id}
+
 **Active Workers:**
+
 | Conv ID | Type | Working On | Status |
 |---------|------|------------|--------|
-| `ghi9012` | expansion | Issue #11 - Session View | **NEW** |
-
-**Spawned: Expansion Worker**
-- Issue: [#11 - Session View](https://github.com/{REPOSITORY}/issues/11)
-- Conversation: [`ghi9012`](https://app.all-hands.dev/conversations/ghi9012...)
+| `abc1234` | testing | PR #42 | **NEW** |
 
 **Current State:**
-- No open PRs
-- Ready issues: #9, #10 (awaiting implementation)
-- Issues needing expansion: #11 (now being expanded), #12
+
+- [PR #42](https://github.com/{REPOSITORY}/pull/42): `oC green ready` — testing in flight
+- Ready issues: #9 (`priority:high`), #10 (`priority:medium`)
+- Issues needing expansion: #11
 
 ---
 ```
 
-### When Spawning Multiple Workers (Parallel)
+**Variant cues** (just swap the action line and 1-3 context bullets — keep the table + Current State sections):
 
-```markdown
-### 2025-05-05 14:30 UTC - Orchestrator
+| Situation | Action line |
+|-----------|-------------|
+| Spawned an expansion worker | `🔍 **Launched: Expansion Worker**` |
+| Spawned implementation | `🛠 **Launched: Implementation Worker**` |
+| Spawned 2 workers in parallel | `🚀 **Launched: 2 workers in parallel**` (list both under one bullet group) |
+| PR worker still running, slot busy | `⏳ **PR slot busy**` (1 bullet pointing at the conversation) |
+| Nothing to do this cycle | `✅ **All quiet**` (1 bullet explaining what's parked and why) |
+| Auto-disabled after 2 quiet cycles | `🔒 **Auto-disabled due to inactivity**` — see `disable-automation` skill |
+| Acting on a human `## INSTRUCTION:` | `📋 **Following human instructions**` (1 bullet stating what was done) |
 
-**Active Workers:**
-| Conv ID | Type | Working On | Status |
-|---------|------|------------|--------|
-| `abc1234` | expansion | Issue #12 - CLI flag | **NEW** |
-| `def5678` | implementation | Issue #9 - Scope messages | **NEW** |
-
-**Spawned: 2 Workers (parallel)**
-
-1. **Expansion Worker**
-   - Issue: [#12 - CLI flag](https://github.com/{REPOSITORY}/issues/12)
-   - Conversation: [`abc1234`](https://app.all-hands.dev/conversations/abc1234...)
-
-2. **Implementation Worker**  
-   - Issue: [#9 - Scope messages](https://github.com/{REPOSITORY}/issues/9) (priority:high)
-   - Conversation: [`def5678`](https://app.all-hands.dev/conversations/def5678...)
-
----
-```
-
-### When Workers Complete
-
-Update status when checking workers:
-
-```markdown
-### 2025-05-05 15:00 UTC - Orchestrator
-
-**Active Workers:**
-| Conv ID | Type | Working On | Status |
-|---------|------|------------|--------|
-| `abc1234` | expansion | Issue #12 | finished ✓ |
-| `def5678` | implementation | Issue #9 | running |
-
-**Worker Completed:** `abc1234` (expansion)
-- Issue #12 now has `ready` label
-
-**Current State:**
-- PR #6 in progress (Issue #9)
-- Ready issues: #10, #12
-- No issues need expansion 🎉
-
----
-```
-
-### When No Action Needed
-
-```markdown
-### 2025-05-05 15:30 UTC - Orchestrator
-
-**Active Workers:**
-| Conv ID | Type | Working On | Status |
-|---------|------|------------|--------|
-| `def5678` | implementation | Issue #9 | running |
-
-✅ **All quiet** - PR slot occupied, expansion slot empty (nothing to expand)
-
-- [PR #6](https://github.com/{REPOSITORY}/pull/6) in progress
-- All issues expanded
-- Next check in ~30 minutes
-
----
-```
+A worker that completes can append its own short closing entry in the same shape — header, one ✅ line, 2–4 bullets, no table.
 
 ## Auto-Disable on Consecutive Quiet Periods
 
-**CRITICAL:** Before logging a "quiet" entry, check if WORKLOG.md already shows two consecutive quiet entries. If so, disable the automation instead of running indefinitely.
-
-### Automation ID
-
-This orchestrator's automation ID is:
-```
-c202ca20-60d5-4f5b-9d53-3d7308c1d95b
-```
-
-### Detection Logic
-
-Check WORKLOG.md for consecutive quiet entries:
+Before logging an "All quiet" entry, check whether the previous orchestrator entry was also "All quiet". If yes, this would be the second consecutive quiet cycle → disable the automation instead of logging another quiet entry.
 
 ```bash
-# Extract last few orchestrator entries and check for consecutive "All quiet" patterns
-# Look for entries that contain both the Orchestrator header and "All quiet"
-QUIET_COUNT=$(tail -100 WORKLOG.md | grep -B2 "All quiet" | grep -c "Orchestrator" || echo 0)
-
-# If 2 or more consecutive quiet entries exist, this would be the 3rd - disable instead
-if [ "$QUIET_COUNT" -ge 2 ]; then
-  echo "Two consecutive quiet periods detected - disabling automation"
+# How many of the last 2 orchestrator entries were quiet?
+LAST=$(grep -E "(^### .*Orchestrator|All quiet)" WORKLOG.md | tail -4)
+QUIET_COUNT=$(echo "$LAST" | grep -c "All quiet")
+if [ "$QUIET_COUNT" -ge 1 ] && echo "$LAST" | tail -2 | grep -q "All quiet"; then
+  # Previous entry was quiet → invoke /disable-automation, log a 🔒 entry, exit
+  :
 fi
 ```
 
-Alternative check using the most recent entries:
+The disable curl, the automation ID, the WORKLOG entry shape, and the re-enable instructions all live in [`disable-automation.md`](disable-automation.md). The orchestrator just decides _when_ to disable; it does not embed the API call inline in this skill, and it does not repeat re-enable instructions into every disable entry.
+
+## Committing WORKLOG.md Updates
+
+**IMPORTANT:** WORKLOG.md updates go to `main`, not to any feature branch.
 
 ```bash
-# Get the last 2 orchestrator log entries
-LAST_ENTRIES=$(grep -E "(^### .*Orchestrator|All quiet)" WORKLOG.md | tail -4)
-
-# Check if both recent orchestrator entries were quiet
-if echo "$LAST_ENTRIES" | grep -q "All quiet" && \
-   [ $(echo "$LAST_ENTRIES" | grep -c "All quiet") -ge 2 ]; then
-  echo "Auto-disable triggered: two consecutive quiet periods"
-fi
-```
-
-### How to Disable
-
-When two consecutive quiet periods are detected:
-
-```bash
-curl -X PATCH "https://app.all-hands.dev/api/automation/v1/c202ca20-60d5-4f5b-9d53-3d7308c1d95b" \
-  -H "Authorization: Bearer ${OPENHANDS_API_KEY}" \
-  -H "Content-Type: application/json" \
-  -d '{"enabled": false}'
-```
-
-### WORKLOG Entry When Disabling
-
-```markdown
-### {timestamp} - Orchestrator
-
-🔒 **Auto-disabled due to inactivity**
-
-Two consecutive quiet periods detected - no new work to pick up.
-Automation has been disabled to prevent unnecessary runs.
-
-**To re-enable:**
-- OpenHands UI: https://app.all-hands.dev/automations → Find "OHTV Workflow Orchestrator" → Toggle enable
-- Or via API:
-  ```bash
-  curl -X PATCH "https://app.all-hands.dev/api/automation/v1/c202ca20-60d5-4f5b-9d53-3d7308c1d95b" \
-    -H "Authorization: Bearer ${OPENHANDS_API_KEY}" \
-    -H "Content-Type: application/json" \
-    -d '{"enabled": true}'
-  ```
-
----
-```
-
-### Decision Flow
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│  Before logging "All quiet":                                     │
-├─────────────────────────────────────────────────────────────────┤
-│  1. Check: Are there 2+ consecutive "All quiet" entries?        │
-│     └─ YES → DISABLE automation + log disable message + EXIT    │
-│     └─ NO  → Log normal "All quiet" entry + EXIT                │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-See [Disable Automation Skill](disable-automation.md) for complete details.
-
-### Committing WORKLOG.md Updates
-
-**IMPORTANT:** WORKLOG.md updates MUST go to `main`, not to any feature branch.
-
-```bash
-# Save current branch
 CURRENT_BRANCH=$(git branch --show-current)
-
-# Stash any uncommitted work
 git stash --include-untracked
-
-# Switch to main and pull latest
-git checkout main
-git pull origin main
-
-# Append your update to WORKLOG.md
-cat >> WORKLOG.md << 'EOF'
-### 2025-05-05 10:30 UTC - Orchestrator
-
-... your update here ...
-
----
-EOF
-
-# Commit and push to main
+git checkout main && git pull origin main
+# append the entry (see Template above)
 git add WORKLOG.md
-git commit -m "chore: worklog update $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+git commit -m "chore(worklog): $(date -u +%Y-%m-%dT%H:%M:%SZ)"
 git push origin main
-
-# Return to previous branch
-if [ -n "$CURRENT_BRANCH" ] && [ "$CURRENT_BRANCH" != "main" ]; then
-  git checkout "$CURRENT_BRANCH"
-  git stash pop 2>/dev/null || true
+if [ "$CURRENT_BRANCH" != "main" ]; then
+  git checkout "$CURRENT_BRANCH" && git stash pop 2>/dev/null || true
 fi
 ```
 
-## Logging
+## Logging (stdout)
 
-After each action, log to stdout for the conversation record:
+After each action, log one structured line to stdout — this is for the conversation record, not the worklog:
 
 ```
-[Orchestrator] 2025-05-05T10:30:00Z
-State: PR #42 - oC green ready, no manual test results
-Action: Spawned testing worker (conversation: abc123)
-Reason: PR ready for manual testing
-Next check: ~30 minutes (next cron trigger)
+[Orchestrator] 2025-05-05T10:30:00Z action=spawn_testing pr=42 conv=abc1234 reason="CI green, no test results"
 ```
 
 ## Exit Conditions
