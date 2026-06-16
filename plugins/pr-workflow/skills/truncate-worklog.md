@@ -33,7 +33,9 @@ These entries represent actual work being done:
 
 | Indicator | Example |
 |-----------|---------|
-| `🚀 **Launched:` | Spawning a worker |
+| `🚀 **Launched:` | Spawning a worker (testing / merge / parallel-spawn umbrella) |
+| `🔍 **Launched:` | Spawning an expansion worker |
+| `🛠 **Launched:` | Spawning an implementation worker |
 | `✅ **Completed:` | PR or task completed |
 | `✅ **Merged:` | PR merged |
 | `✅ **Expanded` | Issue expanded |
@@ -41,6 +43,8 @@ These entries represent actual work being done:
 | `✅ **Created:` | PR or issue created |
 | `📋 **Following Human Instructions**` | Acting on instructions |
 | `🔒 **Auto-disabled` | Automation state change |
+
+The 🔍/🛠 emoji variants mirror the variant-cue table in `orchestrate.md` so single-worker expansion and implementation spawns are correctly classified as productive (and anchor the 6-hour retention window) rather than being silently treated as status checks.
 
 ### Status Check Entries (don't count toward span)
 
@@ -111,8 +115,11 @@ from collections import defaultdict
 def is_productive(content: str) -> bool:
     """Determine if an entry represents productive work."""
     productive_indicators = [
+        # Worker spawns — emoji choice mirrors orchestrate.md's variant-cue table.
         '🚀 **Launched:',
         '🚀 **Spawned:',
+        '🔍 **Launched:',  # expansion worker
+        '🛠 **Launched:',  # implementation worker
         '✅ **Completed:',
         '✅ **Merged:',
         '✅ **Expanded',
