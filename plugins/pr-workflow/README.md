@@ -34,12 +34,90 @@ lxa repo add owner/repo 2>/dev/null || true
 - Priority assessment: enabled
 - Manual testing: required
 - Self-review: disabled
+- Docs update before testing: enabled
 
 ## Plugin Source
 github:jpshackelford/.openhands/plugins/pr-workflow@main
 ```
 
-### 2. Create the Automation
+### 2. Add Required Repository Workflows
+
+The generic workflow assumes the target repository has three separate GitHub
+Actions concerns wired up:
+
+| Workflow | Purpose | Required? |
+|----------|---------|-----------|
+| Project CI, for example `tests.yml` | Produces the green/red signal the orchestrator waits on before testing/review/merge | Yes |
+| Orchestrator enabler, for example `enable-orchestrator.yml` | Re-enables the OpenHands automation when new issues or PRs arrive after auto-disable | Recommended |
+| PR review, for example `pr-review.yml` | Produces the review/approval/rating gate required before merge | Required when `Self-review: disabled` |
+
+Do not treat the orchestrator enabler as a replacement for CI or PR review. It
+is intentionally a small workflow that toggles the automation back on; it does
+not test code and it does not review PRs.
+
+#### PR review workflow
+
+If `orchestration.md` says `Self-review: disabled`, install an external review
+workflow like the one used by `OpenHands/hfox-sync-daemon` and
+`jpshackelford/ohtv`:
+
+```yaml
+name: PR Review by OpenHands
+
+on:
+  pull_request:
+    types: [opened, ready_for_review, labeled, review_requested]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  pr-review:
+    if: |
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      (
+        (github.event.action == 'opened' && github.event.pull_request.draft == false) ||
+        github.event.action == 'ready_for_review' ||
+        (github.event.action == 'labeled' && github.event.label.name == 'review-this') ||
+        (
+          github.event.action == 'review_requested' &&
+          github.event.requested_reviewer.login == 'openhands-agent'
+        )
+      )
+    concurrency:
+      group: pr-review-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Run PR Review
+        uses: OpenHands/extensions/plugins/pr-review@main
+        with:
+          llm-model: litellm_proxy/claude-sonnet-4-5-20250929
+          llm-base-url: https://llm-proxy.app.all-hands.dev
+          review-style: roasted
+          llm-api-key: ${{ secrets.LLM_API_KEY }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+```
+
+Required setup for this workflow:
+
+- `LLM_API_KEY` must be available as a repository or organization Actions
+  secret.
+- Create a `review-this` label for manual retriggers.
+- For an existing PR that was opened before this workflow existed, rebase or
+  update the PR branch onto a base commit that contains the workflow, then add
+  `review-this` or request `openhands-agent` as reviewer. A label event created
+  before the workflow is present will not retroactively run review.
+
+Without either this review workflow or a self-review fallback, the orchestrator
+can get a PR to `ready + CI green + Manual Test Results` and then stall: the
+merge worker requires an acceptable/good review signal, but no automation exists
+to create it.
+
+
+### 3. Create the Automation
 
 Create an automation in OpenHands Cloud that uses this plugin:
 
@@ -48,7 +126,8 @@ Create an automation in OpenHands Cloud that uses this plugin:
   "name": "My Project Workflow",
   "trigger": {
     "type": "cron",
-    "cron_expression": "0 */2 * * *"
+    "schedule": "0 */2 * * *",
+    "timezone": "UTC"
   },
   "plugins": [
     {
@@ -139,6 +218,25 @@ These are loaded alongside the plugin skills and can be invoked by workers.
 
 - `OH_API_KEY` - OpenHands API key for spawning conversations
 - `GITHUB_TOKEN` - GitHub token for gh CLI operations
+
+## Troubleshooting
+
+### Ready PR stalls after manual testing
+
+Symptom: `WORKLOG.md` shows a PR is `ready`, CI is green, and `Manual Test
+Results` exists, but the orchestrator logs `All quiet` or auto-disables instead
+of merging.
+
+Most likely cause: `Self-review: disabled` is configured but the repository has
+no working `pr-review.yml` workflow, or the PR was opened before the workflow
+existed and has not been retriggered. The generic merge worker requires an
+acceptable/good review signal before merging. Install the PR review workflow
+above, verify `LLM_API_KEY` is available, and retrigger review with the
+`review-this` label or a reviewer request.
+
+If the repository intentionally does not use external PR review automation, do
+not leave `Self-review: disabled`; add a project-specific self-review/review
+fallback before relying on this orchestrator to merge PRs.
 
 ## Migration from Project-Specific Plugins
 
