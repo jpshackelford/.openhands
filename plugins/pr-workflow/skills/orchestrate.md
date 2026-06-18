@@ -355,12 +355,47 @@ The PR workflow uses **two parallel slots** and ensures **documentation is updat
 | PR exists, ready, CI green, **README not updated** | Spawn **docs worker** |
 | PR exists, ready, CI green, docs updated, **no manual test results** | Spawn **testing worker** |
 | PR exists, ready, CI green, **test results outdated** | Spawn **re-testing worker** |
+| PR exists, ready, CI green, test results valid, no reviews yet, `Self-review: enabled` | Spawn **self-review worker** |
+| PR exists, ready, CI green, test results valid, no reviews yet, `Self-review: disabled` | Trigger/request external review; log **Waiting for Review** (not quiet) |
 | PR exists, ready, CI green, test results valid, 💬 > 0 | Spawn **review worker** |
 | PR exists, ready, test results valid, good rating, **docs outdated** | Spawn **docs spot-check worker** |
 | PR exists, ready, test results valid, good rating, docs valid | Spawn **merge worker** |
 | No open PR + ready issues with priority | Spawn **impl worker** for highest priority ready issue |
 | No open PR + ready issues, no priority | Run `/assess-priority` inline, then spawn impl worker |
 | No open PR + no ready issues | Nothing to implement (wait for expansion) |
+
+### Anti-Stall: Review Gates Must Be Actionable
+
+The decision table is exhaustive. Do **not** classify an open PR as "quiet" unless every applicable gate is either satisfied or explicitly parked by a codified hold.
+
+The orchestrator may defer a PR/issue only when at least one of these gates is present:
+
+1. A live `## INSTRUCTION:` block in `WORKLOG.md` explicitly defers that PR/issue.
+2. A blocking label (`hold`, `blocked`, `needs-info`, `needs-split`) on the PR or tracking issue.
+3. An active worker still owns the slot.
+4. CI is failing/pending, manual testing is missing/outdated, docs are missing/outdated, or another documented project policy in `AGENTS.md` / `.agents/resources/*` applies.
+
+A missing first review is **not** quiet by itself. If `Self-review: disabled`, the orchestrator must make the external review gate actionable before waiting: verify the target repo has a PR review workflow (usually `.github/workflows/pr-review.yml`), then add the `review-this` label or request `openhands-agent` if no review is present. If no review workflow exists, log a configuration error and do not auto-disable. If `Self-review: enabled`, spawn a self-review worker instead.
+
+External review trigger checklist when `Self-review: disabled`:
+
+```bash
+# Workflow presence check. Accept equivalent filenames only if they call
+# OpenHands/extensions/plugins/pr-review or otherwise produce GitHub reviews.
+gh api repos/{REPOSITORY}/contents/.github/workflows/pr-review.yml >/dev/null
+
+# Manual trigger. Create the label if missing, then add it. If the label was
+# already present and no review run appears after one orchestrator tick, remove
+# and re-add the label or request openhands-agent/all-hands-bot as reviewer.
+gh label create review-this --repo {REPOSITORY} --color 5319E7 --description "Trigger OpenHands PR review workflow" --force
+gh pr edit {number} --repo {REPOSITORY} --add-label review-this
+```
+
+After triggering review, write `⏳ **Waiting for Review**` to `WORKLOG.md`. Do not spawn another implementation worker while an open PR is waiting for its first review.
+
+
+Only use `✅ **All quiet**` when there are no open actionable PRs, no ready issues, and no expansion candidates. Use `⏳ **Waiting for Review**` or another waiting status when work exists but a real gate is pending.
+
 
 ### Combined Decision Flow
 
@@ -754,6 +789,29 @@ Plugins: {PLUGIN_SOURCE}
 PR Number: {number}
 ```
 
+### Self-Review Worker
+
+Use when: `Self-review: enabled` and a ready, tested PR has no first review yet.
+
+```
+Repository: {REPOSITORY}
+Title: [Self Review] PR #{number} - {title}
+Prompt: |
+  You are performing the first review pass for PR #{number} because this project has `Self-review: enabled` and no external review exists yet.
+
+  1. Clone the repo and inspect the PR diff, CI status, and manual test results.
+  2. Review the code critically for correctness, simplicity, test coverage, docs accuracy, and scope control.
+  3. If the PR needs changes, post a PR comment headed `## Self-Review` with a clear rating (`Needs work`) and bullet-pointed required fixes. Do not modify code in this worker; exit so the next orchestrator tick can route review work.
+  4. If the PR is acceptable, post a PR comment headed `## Self-Review` with rating `Acceptable` or `Good`, a concise rationale, and any non-blocking follow-ups.
+  5. Exit. Do not merge; the merge worker handles final merge preparation.
+
+  The comment must include the literal rating word (`Good`, `Acceptable`, or `Needs work`) so `/prepare-and-merge` can evaluate the review gate. Include an AI disclosure line because the comment is posted to GitHub.
+
+Plugins: {PLUGIN_SOURCE}
+PR Number: {number}
+```
+
+
 ### Review Worker
 
 ```
@@ -819,7 +877,7 @@ The worklog is read by humans skimming for "what happened and what's next", and 
 **Each entry MUST contain (in this order):**
 
 1. `### YYYY-MM-DD HH:MM UTC - Orchestrator` header
-2. One bold action line with a status emoji — e.g. `🚀 **Launched: Testing Worker**`, `✅ **All quiet**`, `🔒 **Auto-disabled**`, `📋 **Following Human Instructions**`
+2. One bold action line with a status emoji — e.g. `🚀 **Launched: Testing Worker**`, `⏳ **Waiting for Review**`, `✅ **All quiet**`, `🔒 **Auto-disabled**`, `📋 **Following Human Instructions**`
 3. 1–3 short context bullets (what was spawned, why, link to the spawned conversation)
 4. **Active Workers** section — this is how the next orchestrator finds running conv IDs. Render the table when workers are running, and replace it with a single `_None._` line under the heading when both slots are empty (skim-faster, and Step 2's table-row grep stays indifferent):
 
@@ -876,7 +934,8 @@ Testing [PR #42](https://github.com/{REPOSITORY}/pull/42): {title}
 | Spawned implementation | `🛠 **Launched: Implementation Worker**` |
 | Spawned 2 workers in parallel | `🚀 **Launched: 2 workers in parallel**` (list both under one bullet group; add a row in **Active Workers** for _each_ worker so the next wake-up can poll both conv IDs) |
 | PR worker still running, slot busy | `⏳ **PR slot busy**` (1 bullet pointing at the conversation) |
-| Nothing to do this cycle | `✅ **All quiet**` (1 bullet explaining what's parked and why) |
+| Ready PR has no first review yet and review was requested/triggered | `⏳ **Waiting for Review**` (not quiet; do not count toward auto-disable) |
+| Nothing to do this cycle | `✅ **All quiet**` (only when no actionable PRs/issues remain) |
 | Auto-disabled after 2 quiet cycles | `🔒 **Auto-disabled due to inactivity**` — see `disable-automation` skill |
 | Acting on a human `## INSTRUCTION:` | `📋 **Following Human Instructions**` (1 bullet stating what was done) |
 
@@ -886,7 +945,9 @@ A worker that completes can append its own short closing entry in the same shape
 
 ## Auto-Disable on Consecutive Quiet Periods
 
-Before logging an "All quiet" entry, check whether the previous orchestrator entry was also "All quiet". If yes, this would be the second consecutive quiet cycle → disable the automation instead of logging another quiet entry.
+Before logging an "All quiet" entry, first apply the anti-stall rule above: confirm there are no actionable PRs/issues and no pending review trigger to request. `Waiting for Review`, `PR slot busy`, configuration errors, and other real gates are not quiet and must not count toward auto-disable.
+
+After confirming the current tick is truly quiet, check whether the previous orchestrator entry was also "All quiet". If yes, this would be the second consecutive quiet cycle → disable the automation instead of logging another quiet entry.
 
 ```bash
 # Of the last 2 orchestrator entries, how many were quiet?

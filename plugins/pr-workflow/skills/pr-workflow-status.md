@@ -86,7 +86,7 @@ Based on gathered information, determine where the PR is in the PR workflow:
 | **Implementation** | PR is draft, author still pushing commits |
 | **CI Stabilization** | PR exists, CI red or pending |
 | **Awaiting Manual Test** | PR ready, CI green, NO manual test comment |
-| **Awaiting Review** | PR ready, CI green, manual test posted, no reviews |
+| **Awaiting Review** | PR ready, CI green, manual test posted, no reviews; trigger external review when `Self-review: disabled`, or spawn self-review worker when `Self-review: enabled` |
 | **Review In Progress** | History shows `C`, 💬 > 0 |
 | **Addressing Review** | Author pushing fixes (history shows `F` after `C`) |
 | **Ready for Merge** | Good/acceptable rating, 💬 = 0, CI green, test posted |
@@ -114,4 +114,6 @@ gh pr view 42 --repo {REPOSITORY} --comments | tail -50
 - `lxa` requires repos to be added to a board for `--all` listing
 - The history codes in `lxa pr list` tell the story at a glance
 - Always check for manual test results before spawning review worker
+- `Awaiting Review` is not an `All quiet` state while an open PR remains actionable
+- If `Self-review: disabled`, verify the target repo has a PR review workflow and trigger it with `review-this` or a reviewer request when no review exists
 - Trust your natural language understanding for taste ratings
