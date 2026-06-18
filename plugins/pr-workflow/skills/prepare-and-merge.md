@@ -11,7 +11,7 @@ triggers:
 Final merge preparation and execution. Used when PR has met merge criteria:
 - CI is green
 - Manual test results posted to PR
-- Good/acceptable review rating (or 3x acceptable across rounds)
+- Good/acceptable review rating (or 3x acceptable across rounds), including a `## Self-Review` comment when `Self-review: enabled`
 
 ## Usage
 
@@ -30,7 +30,7 @@ or
 Before using this skill, verify merge criteria is met:
 - **CI green**
 - **Manual test results** posted as PR comment
-- **Review rating**: Good taste, acceptable, or 3x acceptable
+- **Review rating**: Good taste, acceptable, or 3x acceptable. When `Self-review: enabled`, a `## Self-Review` PR comment with `Good` or `Acceptable` can satisfy this gate.
 
 ## Steps
 
