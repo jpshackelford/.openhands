@@ -1,0 +1,31 @@
+# WebTape Demo - VHS-like declarative browser recording
+# This demonstrates the basic syntax for recording web app demos
+
+Output demo.mp4
+Set Width 1280
+Set Height 720
+Set TypingSpeed 75ms
+
+# Voice configuration for narration (ElevenLabs integration)
+# @voice eleven:rachel
+
+# Navigate to the demo app
+# @narrate:before "Welcome to WebTape, a VHS-like tool for browser demos."
+Navigate "http://localhost:12000"
+Sleep 2s
+
+# Interact with the page
+# @narrate:during "Let me demonstrate some interactions."
+Click "body"
+Sleep 1s
+
+# Scroll demonstration
+Scroll "down" "200"
+Sleep 1s
+
+Scroll "up" "100"
+Sleep 1s
+
+# Final pause before ending
+# @narrate:after "That's the basic WebTape workflow!"
+Sleep 2s
