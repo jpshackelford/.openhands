@@ -1,0 +1,112 @@
+# server-client-demo.demorec
+# Template for multi-terminal demos with server + client pattern
+# Demonstrates: named sessions, persistent state, mode switching
+Output server-client-demo.mp4
+Set Width 1280
+Set Height 720
+
+# @voice edge:jenny
+
+# ═══════════════════════════════════════════════════
+# Setup: Configure environment in default terminal
+# ═══════════════════════════════════════════════════
+
+@mode terminal
+
+# @narrate:before "Let's set up our development environment."
+Type "export API_KEY='my-secret-key'"
+Enter
+Sleep 500ms
+Type "export SERVER_PORT=8080"
+Enter
+Sleep 500ms
+Type "echo 'Environment configured: PORT=$SERVER_PORT'"
+Enter
+Sleep 1s
+
+# ═══════════════════════════════════════════════════
+# Server: Start in named terminal session
+# ═══════════════════════════════════════════════════
+
+@mode terminal:server
+
+# @narrate:before "Now let's start our API server in a separate terminal."
+Type "cd /tmp && mkdir -p api-demo && cd api-demo"
+Enter
+Sleep 500ms
+
+# Create a simple response file
+Type "echo '{\"status\": \"ok\", \"message\": \"Hello from API!\"}' > response.json"
+Enter
+Sleep 500ms
+
+# Start the server
+Type "python3 -m http.server 8080"
+Enter
+Sleep 2s
+
+# @narrate:after "Server is running on port 8080."
+Sleep 500ms
+
+# ═══════════════════════════════════════════════════
+# Browser: View the server response
+# ═══════════════════════════════════════════════════
+
+@mode browser
+
+# @narrate:before "Let's check the server in the browser."
+Navigate "http://localhost:8080/response.json"
+Sleep 2s
+
+# @narrate:after "The JSON response loads correctly."
+Sleep 1s
+
+# ═══════════════════════════════════════════════════
+# Client: Make API requests from separate terminal
+# ═══════════════════════════════════════════════════
+
+@mode terminal:client
+
+# @narrate:before "Now let's test the API from a client terminal."
+Type "curl -s http://localhost:8080/response.json | jq ."
+Enter
+Sleep 2s
+
+# @narrate:after "The API returns valid JSON."
+Sleep 1s
+
+# Make another request
+# @narrate:before "Let's check the headers too."
+Type "curl -I http://localhost:8080/response.json"
+Enter
+Sleep 2s
+
+# ═══════════════════════════════════════════════════
+# Server: Show request logs
+# ═══════════════════════════════════════════════════
+
+@mode terminal:server
+
+# @narrate:before "Back to the server - you can see the request logs."
+Sleep 2s
+
+# @narrate:after "Each request is logged with timestamp and status."
+Sleep 1s
+
+# Stop the server
+Ctrl+C
+Sleep 500ms
+
+# ═══════════════════════════════════════════════════
+# Default terminal: Verify state persistence
+# ═══════════════════════════════════════════════════
+
+@mode terminal
+
+# @narrate:before "And our original terminal still has its environment."
+Type "echo 'API_KEY=$API_KEY, PORT=$SERVER_PORT'"
+Enter
+Sleep 1.5s
+
+# @narrate:after "All state preserved across mode switches. That's persistent sessions in action!"
+Sleep 1s

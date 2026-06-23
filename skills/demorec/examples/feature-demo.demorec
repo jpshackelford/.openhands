@@ -1,0 +1,72 @@
+# feature-demo.demorec
+# Template for demonstrating a new feature
+Output feature-demo.mp4
+Set Width 1280
+Set Height 720
+
+# @voice edge:jenny
+
+@mode terminal
+Set Theme "Dracula"
+
+# ─────────────────────────────────────
+# Introduction
+# ─────────────────────────────────────
+
+# @narrate:before "Today I'll show you our new export feature."
+Sleep 1s
+
+# ─────────────────────────────────────
+# Setup / Context
+# ─────────────────────────────────────
+
+# @narrate:before "First, let's load some sample data."
+Type "myapp load sample-data/"
+Enter
+Sleep 2s
+
+# @narrate:after "Great, we have 50 records loaded."
+Sleep 1s
+
+# ─────────────────────────────────────
+# Core Demo
+# ─────────────────────────────────────
+
+# @narrate:before "Now let's use the new export command."
+Type "myapp export --format csv --output results.csv"
+Enter
+Sleep 2s
+
+# @narrate:after "The export completed in under a second."
+Sleep 1s
+
+# @narrate:before "Let's verify the output."
+Type "head -5 results.csv"
+Enter
+Sleep 2s
+
+# @narrate:after "Perfect. The CSV includes all columns with proper formatting."
+Sleep 1s
+
+# ─────────────────────────────────────
+# Additional Capability
+# ─────────────────────────────────────
+
+# @narrate:before "We also support JSON export."
+Type "myapp export --format json --output results.json"
+Enter
+Sleep 2s
+
+Type "cat results.json | jq '.[0]'"
+Enter
+Sleep 2s
+
+# @narrate:after "The JSON format includes all metadata."
+Sleep 1s
+
+# ─────────────────────────────────────
+# Closing
+# ─────────────────────────────────────
+
+# @narrate:before "That's the new export feature. It supports CSV, JSON, and XML formats."
+Sleep 2s
