@@ -297,9 +297,10 @@ CAN_SPAWN_PR_WORKER = !ACTIVE_PR_WORKER
 Use `gh` to discover open PRs and issues, `lxa` for quick status:
 
 ```bash
-# 1. Discover open PRs (usually 0 or 1)
-gh pr list --repo {REPOSITORY} --state open --json number,title,isDraft
-# Output: [{"number": 42, "title": "Add --repair option", "isDraft": false}]
+# 1. Discover open PRs (usually 0 or 1). headRefOid lets the next tick detect
+#    whether a draft author is still actively pushing (anti-stall for drafts).
+gh pr list --repo {REPOSITORY} --state open --json number,title,isDraft,headRefOid
+# Output: [{"number": 42, "title": "Add --repair option", "isDraft": false, "headRefOid": "a1b2c3d"}]
 
 # 2. If a PR exists, get quick status with lxa
 lxa pr list "{REPOSITORY}#42"
@@ -350,8 +351,9 @@ The PR workflow uses **two parallel slots** and ensures **documentation is updat
 | Condition | Action |
 |-----------|--------|
 | `!CAN_SPAWN_PR_WORKER` | Wait (PR worker running) |
-| PR exists, draft, CI failing | Wait (impl worker may still be active) |
-| PR exists, draft, CI green | Wait (impl worker finishing up) |
+| PR exists, draft, **no active worker**, head SHA changed since last tick | Wait one tick (an author is actively pushing) |
+| PR exists, draft, **no active worker**, CI green | **Adopt:** mark ready (`gh pr ready {number}`), then evaluate the ready-PR gates below this same tick |
+| PR exists, draft, **no active worker**, CI failing/pending, head SHA unchanged since last tick | **Adopt:** spawn **impl/fix worker** to finish the PR and mark it ready |
 | PR exists, ready, CI green, **README not updated** | Spawn **docs worker** |
 | PR exists, ready, CI green, docs updated, **no manual test results** | Spawn **testing worker** |
 | PR exists, ready, CI green, **test results outdated** | Spawn **re-testing worker** |
@@ -396,6 +398,32 @@ After triggering review, write `⏳ **Waiting for Review**` to `WORKLOG.md`. Do 
 
 Only use `✅ **All quiet**` when there are no open actionable PRs, no ready issues, and no expansion candidates. Use `⏳ **Waiting for Review**` or another waiting status when work exists but a real gate is pending.
 
+### Anti-Stall: Drafts Must Not Stall the PR Slot
+
+A draft PR is **not** a quiet/parked state, and the `isDraft` flag alone is never
+a reason to wait. The only valid waits for a draft are the codified gates above:
+an active worker still owns the slot (gate #3 — already handled by the
+`!CAN_SPAWN_PR_WORKER` row), a blocking label such as `hold` (gate #2), or an
+explicit `## INSTRUCTION:` deferral (gate #1).
+
+By the time the draft rows are reached, `CAN_SPAWN_PR_WORKER` is already true —
+i.e. **no implementation worker is active**. A draft sitting here means the
+worker finished/died without marking the PR ready, or a human opened the PR
+directly. Either way the orchestrator must **adopt** it rather than wait
+indefinitely for "the author to mark it ready":
+
+- **CI green** → mark the PR ready (`gh pr ready {number}`) and continue through
+  the ready-PR gates (docs → testing → review → merge) on the **same tick**.
+- **CI failing/pending, head SHA unchanged since the previous tick** → the work
+  has stalled; spawn an impl/fix worker that owns the slot, finishes the work,
+  and marks the PR ready.
+- **Head SHA changed since the previous tick** → an author is actively pushing;
+  wait exactly one tick, then re-evaluate (do not adopt mid-push).
+
+To park a genuine work-in-progress draft, a human applies the `hold` label — that
+is the codified escape hatch. Without `hold`, a non-draft-blocked draft is
+in-scope. Record the prior tick's head SHA in the `**Current State:**` block so
+the "changed since last tick" check is decidable on the next wake-up.
 
 ### Combined Decision Flow
 

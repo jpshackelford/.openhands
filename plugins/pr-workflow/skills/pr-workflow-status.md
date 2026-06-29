@@ -83,7 +83,7 @@ Based on gathered information, determine where the PR is in the PR workflow:
 
 | Phase | Indicators |
 |-------|------------|
-| **Implementation** | PR is draft, author still pushing commits |
+| **Implementation** | PR is draft **and** an active worker owns the slot, or a draft author is still pushing (head SHA changed since last tick). A draft with no active worker and no new commits is **not** Implementation — adopt it (see orchestrate "Anti-Stall: Drafts"). |
 | **CI Stabilization** | PR exists, CI red or pending |
 | **Awaiting Manual Test** | PR ready, CI green, NO manual test comment |
 | **Awaiting Review** | PR ready, CI green, manual test posted, no reviews; trigger external review when `Self-review: disabled`, or spawn self-review worker when `Self-review: enabled` |
@@ -95,7 +95,7 @@ Based on gathered information, determine where the PR is in the PR workflow:
 
 ```bash
 # 1. Discover current open PRs
-gh pr list --repo {REPOSITORY} --state open --json number,title,isDraft
+gh pr list --repo {REPOSITORY} --state open --json number,title,isDraft,headRefOid
 
 # 2. Quick status check for each
 lxa pr list "{REPOSITORY}#42"
