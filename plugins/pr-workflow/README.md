@@ -25,8 +25,8 @@ Create `.agents/resources/orchestration.md` in your target repository:
 
 ## Setup Commands
 ```bash
-which lxa || uv tool install lxa
-lxa repo add owner/repo 2>/dev/null || true
+which tkt || uv tool install git+https://github.com/jpshackelford/tickster
+tkt repo add owner/repo 2>/dev/null || true
 ```
 
 ## Phases
