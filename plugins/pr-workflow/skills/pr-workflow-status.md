@@ -8,7 +8,7 @@ triggers:
 
 # PR Workflow Status
 
-Gather comprehensive status of PR(s) for a repository to inform workflow decisions. Uses `lxa` for efficient visualization and `gh` CLI for details.
+Gather comprehensive status of PR(s) for a repository to inform workflow decisions. Uses `tkt` for efficient visualization and `gh` CLI for details.
 
 ## Usage
 
@@ -20,20 +20,20 @@ Then provide:
 - **repository**: GitHub repo (e.g., `{REPOSITORY}`)
 - **pr_number** (optional): Specific PR to check, or check all open PRs
 
-## Using lxa pr list
+## Using tkt pr list
 
-The `lxa pr list` command provides a compact view of PR status:
+The `tkt pr list` command provides a compact view of PR status:
 
 ```bash
 # First, discover open PRs
 gh pr list --repo {REPOSITORY} --state open --json number
 
 # List specific PR (use the discovered number)
-lxa pr list "{REPOSITORY}#<PR_NUMBER>"
+tkt pr list "{REPOSITORY}#<PR_NUMBER>"
 
 # List all open PRs for a repo (need to add to board first)
-lxa repo add {REPOSITORY}
-lxa pr list --all
+tkt repo add {REPOSITORY}
+tkt pr list --all
 ```
 
 **Output columns:**
@@ -98,7 +98,7 @@ Based on gathered information, determine where the PR is in the PR workflow:
 gh pr list --repo {REPOSITORY} --state open --json number,title,isDraft,headRefOid
 
 # 2. Quick status check for each
-lxa pr list "{REPOSITORY}#42"
+tkt pr list "{REPOSITORY}#42"
 # Output: oC green ready 2 - needs attention
 
 # 3. Check for manual test results
@@ -111,8 +111,8 @@ gh pr view 42 --repo {REPOSITORY} --comments | tail -50
 
 ## Notes
 
-- `lxa` requires repos to be added to a board for `--all` listing
-- The history codes in `lxa pr list` tell the story at a glance
+- `tkt` requires repos to be added to a board for `--all` listing
+- The history codes in `tkt pr list` tell the story at a glance
 - Always check for manual test results before spawning review worker
 - `Awaiting Review` is not an `All quiet` state while an open PR remains actionable
 - If `Self-review: disabled`, verify the target repo has a PR review workflow and trigger it with `review-this` or a reviewer request when no review exists

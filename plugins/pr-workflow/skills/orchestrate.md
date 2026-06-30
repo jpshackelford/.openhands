@@ -81,7 +81,7 @@ The orchestrator can run **two workers simultaneously**:
 │  3. PARSE WORKLOG.md for active workers (by conv ID)            │
 │  4. CHECK which workers are still running (API query)           │
 │  5. GATHER STATE:                                                │
-│     - Open PRs (lxa pr list)                                    │
+│     - Open PRs (tkt pr list)                                    │
 │     - Issues by label: ready, hold, priority:*                  │
 │  6. DECIDE what to spawn (see Decision Tree)                    │
 │  7. SPAWN worker(s) if slots available and work exists          │
@@ -131,8 +131,8 @@ The orchestration.md file should contain (in markdown format):
 ## Setup Commands
 ```bash
 # Commands to run before orchestration
-which lxa || uv tool install lxa
-lxa repo add owner/repo 2>/dev/null || true
+which tkt || uv tool install git+https://github.com/jpshackelford/tickster
+tkt repo add owner/repo 2>/dev/null || true
 ```
 
 ## Phases
@@ -161,16 +161,16 @@ After reading the config, extract the key values you'll need:
 Execute any setup commands specified in the orchestration.md config.
 
 Common setup includes:
-- Installing required tools (lxa, project-specific CLIs)
-- Adding the repo to lxa board
+- Installing required tools (tkt, project-specific CLIs)
+- Adding the repo to tkt board
 - Syncing data if the project has a sync command
 
 ```bash
-# Always ensure lxa is available
-which lxa || uv tool install git+https://github.com/jpshackelford/lxa.git
+# Always ensure tkt is available
+which tkt || uv tool install git+https://github.com/jpshackelford/tickster
 
-# Add repo to lxa board (use REPOSITORY from config)
-lxa repo add $REPOSITORY 2>/dev/null || true
+# Add repo to tkt board (use REPOSITORY from config)
+tkt repo add $REPOSITORY 2>/dev/null || true
 
 # Run any additional setup commands from the config
 # (These are project-specific and defined in orchestration.md)
@@ -294,7 +294,7 @@ CAN_SPAWN_PR_WORKER = !ACTIVE_PR_WORKER
 
 ## Gather State
 
-Use `gh` to discover open PRs and issues, `lxa` for quick status:
+Use `gh` to discover open PRs and issues, `tkt` for quick status:
 
 ```bash
 # 1. Discover open PRs (usually 0 or 1). headRefOid lets the next tick detect
@@ -302,8 +302,8 @@ Use `gh` to discover open PRs and issues, `lxa` for quick status:
 gh pr list --repo {REPOSITORY} --state open --json number,title,isDraft,headRefOid
 # Output: [{"number": 42, "title": "Add --repair option", "isDraft": false, "headRefOid": "a1b2c3d"}]
 
-# 2. If a PR exists, get quick status with lxa
-lxa pr list "{REPOSITORY}#42"
+# 2. If a PR exists, get quick status with tkt
+tkt pr list "{REPOSITORY}#42"
 # Output: oCR green ready 2
 # History codes: o=opened, C=changes requested, F=fixes pushed, A=approved, m=merged
 
@@ -926,7 +926,7 @@ The worklog is read by humans skimming for "what happened and what's next", and 
 - Housekeeping commentary on why truncation was deferred (just truncate or don't)
 - Restating the standing `## INSTRUCTION:` rules every cycle
 
-Use `lxa pr list` shorthand (`oCR green ready 💬2`) instead of paragraphs to describe PR state.
+Use `tkt pr list` shorthand (`oCR green ready 💬2`) instead of paragraphs to describe PR state.
 
 ### Template (one entry covers all cases)
 
