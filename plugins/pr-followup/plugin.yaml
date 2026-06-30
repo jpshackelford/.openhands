@@ -1,0 +1,92 @@
+name: pr-followup
+version: 1.0.0
+description: |
+  Personal "wingman" workflow that follows you around the team repos where you
+  have open pull requests and helps you finish the work you started.
+
+  Unlike `pr-workflow` (which drives a solo project from issue to merge in repos
+  you own), `pr-followup` is built for collaborative repos where other engineers
+  also work. It is deferential to your human collaborators and it NEVER merges —
+  the author and the team stay in control.
+
+  On each wake-up it scans the PRs you authored across the repos you track and,
+  for each one, assesses:
+
+  - Is this PR still relevant, or has it been superseded / fixed elsewhere?
+  - Does the problem it fixes still reproduce on the current base branch?
+  - Does the fix still make sense given how the code has changed since?
+  - Is it tested — and what testing needs a human you can't do as an agent?
+  - Are there review comments to react to (agent OR human), deferring to humans?
+
+  It then takes one concrete action (rebase, re-confirm the problem, fix CI, add
+  tests, run QA, address review feedback), or flags the PR for your attention.
+
+  All progress is written to a PERSONAL worklog repository organised by week and
+  day in US Eastern time — not to the target repos.
+
+author: jpshackelford
+repository: https://github.com/jpshackelford/.openhands
+
+skills:
+  - name: follow-up
+    path: skills/follow-up.md
+    triggers:
+      - /follow-up
+      - /followup
+    description: Main loop - scan my open PRs across tracked repos, assess, take one action, log to personal worklog
+
+  - name: assess-pr
+    path: skills/assess-pr.md
+    triggers:
+      - /assess-pr
+    description: Assess a single PR I authored - relevance, problem still exists, fix still sensible, tested, reviews to react to
+
+  - name: confirm-problem
+    path: skills/confirm-problem.md
+    triggers:
+      - /confirm-problem
+    description: Re-verify that the problem a PR fixes still reproduces on the current base branch (before/after)
+
+  - name: qa-pr
+    path: skills/qa-pr.md
+    triggers:
+      - /qa-pr
+    description: Functionally verify a PR by running the software, and report explicitly what testing needs a human
+
+  - name: address-review
+    path: skills/address-review.md
+    triggers:
+      - /address-review
+    description: React to review feedback on my PR - deferential to humans, critical of agents, multi-round
+
+  - name: worklog
+    path: skills/worklog.md
+    triggers:
+      - /worklog
+    description: Append an entry to the personal worklog repo (YYYY-week-WW/YYYY-MM-DD.md, US Eastern)
+
+  - name: spawn-conversation
+    path: skills/spawn-conversation.md
+    triggers:
+      - /spawn-conversation
+    description: Start a new OpenHands conversation (worker) and verify it is running
+
+  - name: disable-automation
+    path: skills/disable-automation.md
+    triggers:
+      - /disable-automation
+    description: Auto-disable this automation after consecutive quiet wake-ups
+
+env:
+  - name: OH_API_KEY
+    description: OpenHands API key for spawning worker conversations
+    required: true
+  - name: OPENHANDS_API_KEY
+    description: OpenHands API key for managing this automation (enable/disable)
+    required: false
+  - name: GITHUB_TOKEN
+    description: GitHub token for gh CLI and tkt operations
+    required: true
+  - name: GIST_TOKEN
+    description: Optional token for tkt board state gists
+    required: false
