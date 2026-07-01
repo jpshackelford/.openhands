@@ -875,6 +875,42 @@ def render_html(data):
 # MAIN - CLI entry point
 # ============================================================================
 
+def validate_environment():
+    """Validate required environment variables and give helpful error messages"""
+    errors = []
+    warnings = []
+    
+    # Check required: OpenHands API key
+    if not API_KEY:
+        errors.append("❌ Missing required OpenHands API key")
+        errors.append("   Set one of: OH_API_KEY or OPENHANDS_API_KEY")
+        errors.append("   Get your key from: https://app.all-hands.dev/settings")
+    
+    # Check recommended: LLM key for synthesis
+    if not LITELLM_KEY:
+        warnings.append("⚠️  No LLM API key found - synthesis will be disabled")
+        warnings.append("   Set one of: LITELLM_PROXY_KEY or OPENAI_API_KEY")
+        warnings.append("   Without this, you'll only get basic conversation titles")
+    
+    # Check optional: GitHub token for PR/issue details
+    if not GITHUB_TOKEN:
+        warnings.append("⚠️  GITHUB_TOKEN not set - PR/issue details will be limited")
+        warnings.append("   Set GITHUB_TOKEN to fetch full PR and issue descriptions")
+    
+    # Print warnings
+    if warnings:
+        for warning in warnings:
+            print(warning, file=sys.stderr)
+        print(file=sys.stderr)
+    
+    # Exit on errors
+    if errors:
+        print("\n🛑 Environment validation failed:\n", file=sys.stderr)
+        for error in errors:
+            print(error, file=sys.stderr)
+        print("\nFor more details, see the skill documentation.", file=sys.stderr)
+        sys.exit(1)
+
 def main():
     """Main entry point with argument parsing"""
     parser = argparse.ArgumentParser(
@@ -912,6 +948,9 @@ def main():
     )
     
     args = parser.parse_args()
+    
+    # Validate environment before doing any work
+    validate_environment()
     
     # Calculate date offset from absolute date if provided
     date_offset = args.date_offset

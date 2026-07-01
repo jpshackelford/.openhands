@@ -6,6 +6,7 @@ Serves /tmp/worklog.html on port 12000
 import http.server
 import socketserver
 import os
+import sys
 
 PORT = 12000
 DIRECTORY = "/tmp"
@@ -36,6 +37,15 @@ class WorklogHandler(http.server.SimpleHTTPRequestHandler):
 
 def main():
     """Start the server"""
+    # Check if worklog file exists
+    worklog_path = os.path.join(DIRECTORY, "worklog.html")
+    if not os.path.exists(worklog_path):
+        print(f"❌ Error: {worklog_path} not found", file=sys.stderr)
+        print(f"", file=sys.stderr)
+        print(f"Generate a worklog first:", file=sys.stderr)
+        print(f"  python3 generate_worklog.py --format html", file=sys.stderr)
+        sys.exit(1)
+    
     os.chdir(DIRECTORY)
     
     with socketserver.TCPServer(("", PORT), WorklogHandler) as httpd:
