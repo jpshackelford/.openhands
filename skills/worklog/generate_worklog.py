@@ -835,6 +835,10 @@ def main():
         help='Output file path (default: /tmp/worklog.{ext})'
     )
     parser.add_argument(
+        '--date',
+        help='Specific date (YYYY-MM-DD, e.g., 2026-06-15)'
+    )
+    parser.add_argument(
         '--date-offset',
         type=int,
         default=0,
@@ -853,9 +857,22 @@ def main():
     
     args = parser.parse_args()
     
+    # Calculate date offset from absolute date if provided
+    date_offset = args.date_offset
+    if args.date:
+        try:
+            from zoneinfo import ZoneInfo
+            target_date = datetime.fromisoformat(args.date)
+            today = datetime.now(ZoneInfo(args.timezone)).replace(hour=0, minute=0, second=0, microsecond=0)
+            date_offset = (target_date - today.replace(tzinfo=None)).days
+            print(f"📅 Generating worklog for {args.date} (offset: {date_offset} days)", file=sys.stderr)
+        except ValueError as e:
+            print(f"❌ Invalid date format: {args.date}. Use YYYY-MM-DD", file=sys.stderr)
+            sys.exit(1)
+    
     # Gather data
     print(f"🔄 Generating worklog in {args.format} format...", file=sys.stderr)
-    data = gather_worklog_data(date_offset=args.date_offset, timezone_name=args.timezone)
+    data = gather_worklog_data(date_offset=date_offset, timezone_name=args.timezone)
     
     # Render based on format
     if args.format == 'text':
