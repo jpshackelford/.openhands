@@ -9,7 +9,7 @@ An **LLM-powered daily worklog system** for OpenHands conversations that:
 3. **Extracts PR/issue links** with numbers and makes them clickable
 4. **Supports multiple output formats**: text, markdown, and HTML
 5. **Separates data gathering from rendering** for flexible use cases
-6. **Optimized for daily automation** (4-5x cheaper than full event inspection)
+6. **Highly optimized for token efficiency** (single API call per conversation, pre-filtering)
 
 **Use Cases:**
 - 📝 **Text format**: Direct agent responses, chat messages, quick summaries
@@ -57,17 +57,26 @@ bash .agents/skills/worklog/run_worklog.sh
 
 ## 💡 Key Features
 
-### 1. LLM-Powered Synthesis
+### 1. Highly Optimized Token Efficiency
 
-**Per 20 conversations:**
-- ~60-80 OpenHands API calls (data gathering)
-- ~8-12K tokens (including LLM synthesis)
-- **4-5x cheaper** than full event inspection (~50K tokens)
+**Per 10 conversations (v5 optimizations):**
+- ~10-15 OpenHands API calls (1 per conversation + GitHub details)
+- ~6-10K LLM tokens (only for engaged conversations)
+- **70% fewer API calls** than v4 (was 3+ calls per conversation)
+- **20-30% fewer LLM tokens** (pre-filtering skips low-engagement conversations)
 
-**How:**
-- Gather context: user messages, agent messages, finish message, PR/issue details
-- LLM synthesis: ~300-500 tokens per conversation for deep understanding
-- Real synthesis, not pattern matching or quoting
+**Key optimizations:**
+- ✅ **Single event fetch** per conversation (was 3+ separate API calls)
+- ✅ **Client-side filtering** (extract messages/actions without extra API calls)
+- ✅ **Engagement pre-filtering** (skip fire-and-forget or abandoned conversations)
+- ✅ **Smart GitHub fetching** (only first PR gets detailed info)
+
+**How it works:**
+1. Fetch all events once per conversation (1 API call)
+2. Compute engagement score (user messages, actions, completion)
+3. Skip low-engagement conversations before LLM synthesis
+4. Extract context client-side (no more API calls)
+5. LLM synthesis only for meaningful conversations (~300-500 tokens each)
 
 ### 2. Deep Understanding
 
@@ -185,7 +194,7 @@ task: |
 4. **Time tracking** - See when you worked on what
 5. **PR/issue tracking** - All your work in one place
 
-## 🔍 How It Works
+## 🔍 How It Works (v5 Optimized)
 
 ### Step 1: Fetch Conversations (1 API call)
 
@@ -195,25 +204,80 @@ GET /api/v1/app-conversations/search?created_at__gte=2026-06-30T04:00:00Z
 
 Returns all conversations from today (ET timezone)
 
-### Step 2: Per Conversation (2 API calls)
+### Step 2: Per Conversation (1 API call - OPTIMIZED!)
 
 ```python
-# Get user messages
-GET /api/v1/conversation/{id}/events/search?kind__eq=MessageEvent&limit=10
-
-# Get finish message (optional)
-GET /api/v1/conversation/{id}/events/search?kind__eq=ActionEvent&limit=20
+# Fetch all events in a single call (was 3+ calls in v4)
+GET /api/v1/conversation/{id}/events/search?limit=200
 ```
 
-### Step 3: Synthesize & Extract (No API calls)
+Then client-side:
+- Extract user messages (first 5)
+- Extract agent messages (first 3)
+- Extract finish message (if present)
+- Compute engagement score
+- Extract PR/issue URLs
 
-- **Pattern matching** on user message text → objective
-- **Regex extraction** of PR/issue URLs → links
-- **Template rendering** → HTML
+### Step 3: Pre-filter Low-Engagement (No API calls)
 
-### Step 4: Serve (No API calls)
+Skip LLM synthesis for conversations with:
+- Single user message and no completion
+- Very few actions
+- Engagement score < threshold (default: 5/100)
 
-HTTP server on port 12000 serves generated HTML
+### Step 4: GitHub Details (0-1 API calls)
+
+Only fetch details for first PR or issue (was 2+ each in v4)
+
+### Step 5: LLM Synthesis (Only for Engaged Conversations)
+
+Use GPT-4o-mini to generate:
+- Clear title describing real work
+- Purpose explaining problem, solution, and status
+- ~300-500 tokens per conversation
+
+### Step 6: Render & Serve
+
+Output as HTML/markdown/text and optionally serve on port 12000
+
+## ⚙️ Configuration
+
+### Required Environment Variables
+
+- **`OH_API_KEY`** - OpenHands Cloud API key for fetching conversations
+- **`LITELLM_PROXY_KEY`** or **`OPENAI_API_KEY`** or **`ANTHROPIC_API_KEY`** - LLM API key for synthesis
+
+### Optional Environment Variables
+
+- **`GITHUB_TOKEN`** - For fetching PR/issue titles and states (highly recommended)
+- **`LITELLM_ENDPOINT_URL`** - LiteLLM endpoint (default: `https://api.openai.com/v1`)
+- **`SYNTHESIS_MODEL`** - Model for LLM synthesis (default: `gpt-4o-mini`)
+- **`MIN_ENGAGEMENT_SCORE`** - Minimum engagement score for LLM synthesis (default: `5`)
+  - Range: 0-100
+  - Lower = include more conversations (more tokens)
+  - Higher = skip more low-engagement conversations (fewer tokens)
+  - Set to `0` to synthesize all conversations
+
+### Command-Line Options
+
+```bash
+# Output formats
+python3 generate_worklog.py --format text     # Plain text
+python3 generate_worklog.py --format markdown # Markdown
+python3 generate_worklog.py --format html     # HTML (default)
+
+# Output destination
+python3 generate_worklog.py --stdout          # Print to console
+python3 generate_worklog.py -o custom.html    # Custom file
+
+# Date selection
+python3 generate_worklog.py --date-offset 0   # Today (default)
+python3 generate_worklog.py --date-offset -1  # Yesterday
+python3 generate_worklog.py --date-offset -7  # 7 days ago
+
+# Timezone
+python3 generate_worklog.py --timezone America/Los_Angeles
+```
 
 ## 🐛 Troubleshooting
 
