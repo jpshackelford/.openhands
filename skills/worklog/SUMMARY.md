@@ -7,9 +7,14 @@ An **LLM-powered daily worklog system** for OpenHands conversations that:
 1. **Uses LLM to deeply understand** each conversation's purpose
 2. **Synthesizes clear explanations** of what, why, what was done, and what's left
 3. **Extracts PR/issue links** with numbers and makes them clickable
-4. **Generates beautiful HTML** with modern styling
-5. **Serves via HTTP** on port 12000
+4. **Supports multiple output formats**: text, markdown, and HTML
+5. **Separates data gathering from rendering** for flexible use cases
 6. **Optimized for daily automation** (4-5x cheaper than full event inspection)
+
+**Use Cases:**
+- 📝 **Text format**: Direct agent responses, chat messages, quick summaries
+- 📄 **Markdown format**: Documentation, GitHub/Notion integration
+- 🌐 **HTML format**: Visual dashboards, browser viewing, presentations
 
 ## 📁 Files Created
 
@@ -25,12 +30,22 @@ An **LLM-powered daily worklog system** for OpenHands conversations that:
 
 ## 🚀 Quick Start
 
+### Text Output (Direct Response)
 ```bash
-# Generate today's worklog
-python3 .agents/skills/worklog/generate_worklog.py
+# Print today's worklog as text
+python3 .agents/skills/worklog/generate_worklog.py --format text --stdout
+```
 
-# Or generate yesterday's (for testing)
-python3 .agents/skills/worklog/generate_worklog.py --yesterday
+### Markdown Output (Documentation)
+```bash
+# Generate markdown worklog
+python3 .agents/skills/worklog/generate_worklog.py --format markdown -o ~/worklog.md
+```
+
+### HTML Output (Visual Dashboard)
+```bash
+# Generate HTML worklog (default)
+python3 .agents/skills/worklog/generate_worklog.py
 
 # Serve on port 12000
 python3 .agents/skills/worklog/serve_worklog.py &
@@ -39,7 +54,7 @@ python3 .agents/skills/worklog/serve_worklog.py &
 bash .agents/skills/worklog/run_worklog.sh
 ```
 
-**View at:** https://work-1-tahhvksgnhffxrqu.prod-runtime.all-hands.dev/
+**View HTML at:** https://work-1-tahhvksgnhffxrqu.prod-runtime.all-hands.dev/
 
 ## 💡 Key Features
 

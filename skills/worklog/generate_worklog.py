@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
-Enhanced Daily Worklog Generator v3 - LLM-powered synthesis
-Uses parallel LLM calls to synthesize deep understanding of each conversation
+Enhanced Daily Worklog Generator v4 - Separated concerns
+Generates worklog data with LLM synthesis, supports multiple output formats
 """
-import os, json, sys, re, asyncio
+import os, json, sys, re, asyncio, argparse
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from zoneinfo import ZoneInfo
 
 API_KEY = os.environ.get('OH_API_KEY')
@@ -357,27 +357,26 @@ def format_outcomes(context):
     return outcomes
 
 # ============================================================================
-# MAIN WORKFLOW
+# DATA GATHERING - Fetch and structure worklog data
 # ============================================================================
 
-def main():
-    """Generate enhanced worklog with LLM-powered synthesis"""
-    print("🔄 Generating enhanced worklog with LLM synthesis...", file=sys.stderr)
+def gather_worklog_data(date_offset=0, timezone_name='America/New_York'):
+    """
+    Gather worklog data for a specific date.
+    Returns structured data without any rendering.
     
-    if not LITELLM_KEY:
-        print("⚠️  Warning: No LLM key found. Synthesis will use fallback rules.", file=sys.stderr)
-        print("   Set LITELLM_PROXY_KEY, OPENAI_API_KEY, or ANTHROPIC_API_KEY", file=sys.stderr)
+    Args:
+        date_offset: Days to offset from today (0=today, -1=yesterday)
+        timezone_name: IANA timezone name for date boundaries
     
-    # Get timezone
-    et_tz = ZoneInfo('America/New_York')
+    Returns:
+        dict with 'date', 'conversations', and 'metadata'
+    """
+    et_tz = ZoneInfo(timezone_name)
     now_et = datetime.now(et_tz)
     
-    # Support date parameter
-    import sys as sys_module
-    if len(sys_module.argv) > 1 and sys_module.argv[1] == '--yesterday':
-        from datetime import timedelta
-        now_et = now_et - timedelta(days=1)
-        print("📅 Generating worklog for YESTERDAY", file=sys.stderr)
+    if date_offset != 0:
+        now_et = now_et + timedelta(days=date_offset)
     
     today_et_start = now_et.replace(hour=0, minute=0, second=0, microsecond=0)
     today_utc_start = today_et_start.astimezone(timezone.utc)
@@ -392,11 +391,13 @@ def main():
     if not GITHUB_TOKEN:
         print("⚠️  GITHUB_TOKEN not set - PR/issue details will be limited", file=sys.stderr)
     
-    # Generate HTML header
-    html = generate_html_header(today_et, len(convs))
+    if not LITELLM_KEY:
+        print("⚠️  Warning: No LLM key found. Synthesis will use fallback rules.", file=sys.stderr)
     
-    # Process each conversation
+    # Process each conversation - gather data only
     print("\n🧠 Analyzing conversations with LLM synthesis...", file=sys.stderr)
+    conversations_data = []
+    
     for i, c in enumerate(convs, 1):
         print(f"  {i}/{len(convs)}: {c['title'][:60]}...", file=sys.stderr)
         
@@ -418,46 +419,26 @@ def main():
             title, purpose = synthesize_title_and_purpose(context)
             outcomes = format_outcomes(context)
         
-        # Build HTML
-        html += f'''
-            <div class="conv">
-                <h2 class="conv-title">{i}. {title}</h2>
-                <div class="conv-header">
-                    <a href="https://app.all-hands.dev/conversations/{c["id"]}" target="_blank" class="conv-link">
-                        View conversation →
-                    </a>
-                    <span class="conv-time">{time_str}</span>
-                </div>
-                <div class="conv-purpose">{purpose}</div>'''
-        
-        if outcomes:
-            outcomes_html = '<br>'.join(outcomes)
-            html += f'''
-                <div class="conv-outcomes">{outcomes_html}</div>'''
-        
-        html += f'''
-                <div class="meta">
-                    <span class="badge">🆔 {c["id"][:8]}</span>
-                </div>
-            </div>'''
+        # Store structured data
+        conversations_data.append({
+            'index': i,
+            'id': c['id'],
+            'original_title': c['title'],
+            'synthesized_title': title,
+            'purpose': purpose,
+            'outcomes': outcomes,
+            'time': time_str,
+            'time_obj': dt_et,
+            'context': context
+        })
     
-    # Close HTML
-    html += '''
-        </main>
-        <footer>
-            Generated with OpenHands Cloud API + GitHub API + LLM Synthesis v3
-        </footer>
-    </div>
-</body>
-</html>'''
-    
-    # Write to file
-    with open('/tmp/worklog.html', 'w') as f:
-        f.write(html)
-    
-    print(f"\n✅ Generated enhanced worklog with {len(convs)} conversations", file=sys.stderr)
-    print(f"📄 Saved to /tmp/worklog.html", file=sys.stderr)
-    print(f"🌐 Serve with: python3 skills/worklog/serve_worklog.py", file=sys.stderr)
+    return {
+        'date': today_et,
+        'date_obj': now_et,
+        'timezone': timezone_name,
+        'conversations': conversations_data,
+        'total_count': len(conversations_data)
+    }
 
 def generate_html_header(today_et, conv_count):
     """Generate HTML header and styling"""
@@ -629,6 +610,173 @@ def generate_html_header(today_et, conv_count):
             </div>
         </header>
         <main>'''
+
+# ============================================================================
+# RENDERERS - Convert data to different output formats
+# ============================================================================
+
+def render_text(data):
+    """Render worklog data as plain text"""
+    lines = []
+    lines.append(f"📋 Worklog for {data['date']}")
+    lines.append("=" * 70)
+    lines.append(f"Total conversations: {data['total_count']}")
+    lines.append("")
+    
+    for conv in data['conversations']:
+        lines.append(f"{conv['index']}. {conv['synthesized_title']}")
+        lines.append(f"   Time: {conv['time']}")
+        lines.append(f"   {conv['purpose']}")
+        
+        if conv['outcomes']:
+            lines.append(f"   Outcomes:")
+            for outcome in conv['outcomes']:
+                # Strip HTML tags for text output
+                clean_outcome = re.sub(r'<[^>]+>', '', outcome)
+                lines.append(f"      {clean_outcome}")
+        
+        lines.append(f"   Conversation ID: {conv['id'][:8]}")
+        lines.append(f"   Link: https://app.all-hands.dev/conversations/{conv['id']}")
+        lines.append("")
+    
+    return '\n'.join(lines)
+
+def render_markdown(data):
+    """Render worklog data as markdown"""
+    lines = []
+    lines.append(f"# 📋 Worklog for {data['date']}")
+    lines.append("")
+    lines.append(f"**Total conversations:** {data['total_count']}")
+    lines.append("")
+    
+    for conv in data['conversations']:
+        lines.append(f"## {conv['index']}. {conv['synthesized_title']}")
+        lines.append("")
+        lines.append(f"**Time:** {conv['time']} | [View conversation](https://app.all-hands.dev/conversations/{conv['id']})")
+        lines.append("")
+        lines.append(conv['purpose'])
+        lines.append("")
+        
+        if conv['outcomes']:
+            lines.append("**Outcomes:**")
+            for outcome in conv['outcomes']:
+                # Convert HTML links to markdown
+                clean_outcome = re.sub(r'<a href="([^"]+)"[^>]*>([^<]+)</a>', r'[\2](\1)', outcome)
+                clean_outcome = re.sub(r'<[^>]+>', '', clean_outcome)
+                lines.append(f"- {clean_outcome}")
+            lines.append("")
+        
+        lines.append(f"_Conversation ID: `{conv['id'][:8]}`_")
+        lines.append("")
+        lines.append("---")
+        lines.append("")
+    
+    return '\n'.join(lines)
+
+def render_html(data):
+    """Render worklog data as HTML"""
+    html = generate_html_header(data['date'], data['total_count'])
+    
+    for conv in data['conversations']:
+        html += f'''
+            <div class="conv">
+                <h2 class="conv-title">{conv['index']}. {conv['synthesized_title']}</h2>
+                <div class="conv-header">
+                    <a href="https://app.all-hands.dev/conversations/{conv["id"]}" target="_blank" class="conv-link">
+                        View conversation →
+                    </a>
+                    <span class="conv-time">{conv['time']}</span>
+                </div>
+                <div class="conv-purpose">{conv['purpose']}</div>'''
+        
+        if conv['outcomes']:
+            outcomes_html = '<br>'.join(conv['outcomes'])
+            html += f'''
+                <div class="conv-outcomes">{outcomes_html}</div>'''
+        
+        html += f'''
+                <div class="meta">
+                    <span class="badge">🆔 {conv["id"][:8]}</span>
+                </div>
+            </div>'''
+    
+    html += '''
+        </main>
+        <footer>
+            Generated with OpenHands Cloud API + GitHub API + LLM Synthesis v4
+        </footer>
+    </div>
+</body>
+</html>'''
+    
+    return html
+
+# ============================================================================
+# MAIN - CLI entry point
+# ============================================================================
+
+def main():
+    """Main entry point with argument parsing"""
+    parser = argparse.ArgumentParser(
+        description='Generate worklog with LLM synthesis in multiple formats'
+    )
+    parser.add_argument(
+        '--format', 
+        choices=['text', 'markdown', 'html'], 
+        default='html',
+        help='Output format (default: html)'
+    )
+    parser.add_argument(
+        '--output', '-o',
+        help='Output file path (default: /tmp/worklog.{ext})'
+    )
+    parser.add_argument(
+        '--date-offset',
+        type=int,
+        default=0,
+        help='Days offset from today (0=today, -1=yesterday, etc.)'
+    )
+    parser.add_argument(
+        '--timezone',
+        default='America/New_York',
+        help='IANA timezone name (default: America/New_York)'
+    )
+    parser.add_argument(
+        '--stdout',
+        action='store_true',
+        help='Print to stdout instead of file'
+    )
+    
+    args = parser.parse_args()
+    
+    # Gather data
+    print(f"🔄 Generating worklog in {args.format} format...", file=sys.stderr)
+    data = gather_worklog_data(date_offset=args.date_offset, timezone_name=args.timezone)
+    
+    # Render based on format
+    if args.format == 'text':
+        output = render_text(data)
+        ext = 'txt'
+    elif args.format == 'markdown':
+        output = render_markdown(data)
+        ext = 'md'
+    else:  # html
+        output = render_html(data)
+        ext = 'html'
+    
+    # Output
+    if args.stdout:
+        print(output)
+    else:
+        output_path = args.output or f'/tmp/worklog.{ext}'
+        with open(output_path, 'w') as f:
+            f.write(output)
+        
+        print(f"\n✅ Generated worklog with {data['total_count']} conversations", file=sys.stderr)
+        print(f"📄 Saved to {output_path}", file=sys.stderr)
+        
+        if args.format == 'html':
+            print(f"🌐 Serve with: python3 skills/worklog/serve_worklog.py", file=sys.stderr)
 
 if __name__ == '__main__':
     main()
