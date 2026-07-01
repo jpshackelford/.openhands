@@ -4,26 +4,77 @@ Generate a worklog of your OpenHands conversations with **LLM-synthesized deep u
 
 ## 🎯 Agent Guidance: Handling Worklog Requests
 
-When a user asks for a worklog, determine their intent:
+### ⚠️ IMPORTANT: Always Use the Skill Scripts
+
+**DO NOT** fall back to manual API queries. The worklog skill provides:
+- LLM-synthesized conversation summaries (not just titles)
+- Automatic PR/issue extraction and linking
+- Rich formatting with clickable links
+- Multiple output formats optimized for different use cases
+
+If the skill files are not available in the workspace (`.agents/skills/worklog/`), **explicitly tell the user** and offer to:
+1. Add the skill from the repository
+2. Use a simplified API-based summary (but explain the limitations)
+
+### Determining User Intent
+
+When a user asks for a worklog, **ALWAYS offer format options** unless they explicitly specify one:
+
+**Recommended Response:**
+> "I can generate your worklog in three formats:
+> 
+> 1. **📝 Text** - Quick summary displayed here (includes conversation links, synthesized purposes, and PR/issue references)
+> 2. **🌐 HTML Dashboard** - Rich visual interface with clickable links, color-coded status, and better readability (recommended for detailed review)
+> 3. **📄 Markdown** - Structured format for documentation or notes
+> 
+> Which would you prefer? (I recommend the HTML dashboard for the best experience.)"
 
 **Clear Intent Indicators:**
-- "show me my worklog" / "what did I work on today" → **Text to stdout**
-- "create a worklog dashboard" / "host my worklog" → **HTML + serve**
-- "generate worklog for documentation" / "add to my notes" → **Markdown**
+- "create a worklog dashboard" / "host my worklog" / "html report" → **HTML + serve**
+- "generate worklog for documentation" / "add to my notes" / "markdown" → **Markdown**
+- "quick summary" / "show me now" / "text" → **Text to stdout**
 
-**If Ambiguous:**
-Ask the user:
-> "Would you like me to:
-> 1. Show you the worklog directly (text output)
-> 2. Create an HTML dashboard you can view in browser
-> 3. Generate markdown for documentation
-> 
-> Let me know which format works best for you."
+**Default Recommendation:**
+- For **first-time** requests or ambiguous queries ("what did I work on?", "show my worklog", etc.), **offer all three options** with HTML as the recommended choice
+- Emphasize that HTML includes PR/issue links, synthesis, and better formatting
+- Only use text format if the user explicitly wants immediate output or has chosen it before
 
-**Default Behavior:**
-- If user seems to want a quick answer → Use text format with `--stdout`
-- If user mentions "hosting", "serving", "dashboard", or "browser" → Use HTML + serve
-- If user mentions "document", "save", or "file" → Use markdown
+**Why Recommend HTML:**
+- Includes clickable links to PRs, issues, and conversations
+- Color-coded execution status
+- Better typography and visual hierarchy
+- Can be shared via browser link
+- More polished for reviewing work or sharing with others
+
+### Ensuring Skill Availability
+
+Before running worklog commands, verify the skill files exist:
+
+```bash
+# Check if skill is available
+ls .agents/skills/worklog/generate_worklog.py
+```
+
+If the skill is **not available** in the workspace:
+
+1. **First option (recommended)**: Add the skill from the repository
+   ```bash
+   # Create skills directory if needed
+   mkdir -p .agents/skills
+   
+   # Copy worklog skill from user's repository
+   git clone https://github.com/jpshackelford/.openhands.git /tmp/user-openhands
+   cp -r /tmp/user-openhands/skills/worklog .agents/skills/
+   ```
+
+2. **Alternative**: Explain to the user:
+   > "The worklog skill files aren't available in this workspace. I can:
+   > 1. Install the worklog skill (recommended - includes PR/issue extraction and synthesis)
+   > 2. Provide a basic summary using the API (limited functionality, no PR/issue links or synthesis)
+   >
+   > Which would you prefer?"
+
+**Never** silently fall back to manual API queries without explaining the limitations.
 
 ## When to Use What Format
 
@@ -32,6 +83,15 @@ Ask the user:
 - 🌐 **HTML output** (`--format html` + serve): Visual dashboard, browser viewing, presentations
 
 ## Quick Start
+
+### Prerequisites
+
+Ensure the skill is available before running commands:
+
+```bash
+# Verify skill files exist
+test -f .agents/skills/worklog/generate_worklog.py || echo "Skill not found - see 'Ensuring Skill Availability' section"
+```
 
 ### For Direct User Response (Text)
 ```bash
