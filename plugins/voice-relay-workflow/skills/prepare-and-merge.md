@@ -45,6 +45,28 @@ The procedure below is presented in reading order. Headings are stable names —
 
 This is the **last line of defense** for the Closing-Trailer Acceptance-Criteria Gate (defined in the plugin's `SKILL.md`). The implementation and review workers should have already converged on the right trailer + follow-ups, but the merge worker MUST verify one more time — review feedback and CI fixes between the last review round and now can flip the verdict.
 
+**Pre-flight: verify the existing follow-up set (idempotence verification).** Per the gate's idempotence rule (`SKILL.md` → "Idempotence (no duplicate follow-ups)"), the existing follow-up set is canonical. The merge worker does NOT file new follow-ups — that's the implementation / review worker's job. The merge worker's role is to **verify** that the existing set matches the current gap analysis. A discrepancy is a gate failure.
+
+```bash
+# (a) Follow-ups already recorded in this PR's body
+gh pr view PR_NUMBER --repo jpshackelford/voice-relay --json body -q '.body' \
+  | awk '/^## Deferred to follow-ups/{flag=1; next} /^## /{flag=0} flag && /#[0-9]+/' \
+  | grep -oE '#[0-9]+' | sort -u > /tmp/existing-in-body.txt
+
+# (b) Follow-ups filed by parallel runs against the same umbrella issue
+UMBRELLA=$(gh pr view PR_NUMBER --repo jpshackelford/voice-relay --json body -q '.body' \
+  | grep -ioE '(fixes|closes|resolves|refs|part of) #[0-9]+' \
+  | head -1 | grep -oE '[0-9]+')
+gh issue list --repo jpshackelford/voice-relay --state all \
+  --search "in:title \"follow-up to #${UMBRELLA}\"" \
+  --json number -q '.[].number' | sed 's/^/#/' | sort -u > /tmp/existing-by-title.txt
+
+# Union = the existing follow-up set
+sort -u /tmp/existing-in-body.txt /tmp/existing-by-title.txt > /tmp/existing-followups.txt
+```
+
+If (b) returns issues that are NOT in (a), the implementation/review worker's PR body update is out of sync — drop back to draft and let a review-round worker reconcile, do not merge with an inconsistent body.
+
 ```bash
 # 1. Extract auto-close trailers from the PR body.
 gh pr view PR_NUMBER --repo jpshackelford/voice-relay --json body -q '.body' \
