@@ -373,6 +373,8 @@ def synthesize_title_and_purpose(context):
 1. TITLE: A clear 5-10 word title describing the real work (not git actions)
 2. PURPOSE: 1-2 sentences explaining what problem is being solved, why it matters, what was accomplished, and what's left unfinished
 
+**IMPORTANT**: Focus on what the USER asked for, not the content mentioned in the agent's response. If the user asks to "generate a worklog", "review today's work", "show what I worked on", then the conversation is about GENERATING A SUMMARY/WORKLOG, not about the specific topics mentioned in that summary.
+
 Context:
 {context_text}
 
@@ -386,13 +388,17 @@ Good (synthesis):
 Title: Super-admin management endpoint for enterprise auth
 Purpose: Adding grant/revoke/list endpoints for super-admin privileges in the enterprise authentication system. Implementation complete with API routes, validation, and tests. Rebased onto feat/super-roles branch and pushed for review.
 
-Bad (generic):
-Title: Clone and examine automation repository
-Purpose: Setting up repository for investigation
+Bad (confusing meta with content):
+User asked: what have I been working on today?
+Agent responded: Here's a summary: 1. Fixed auth bug, 2. Reviewed PR #123...
+Title: Fix authentication bug in user login
+[This is WRONG - the conversation is about generating a summary, not fixing auth]
 
-Good (specific):
-Title: Fix automation link ghosting in Canvas SaaS
-Purpose: Investigating why automation links appear ghosted in the Canvas SaaS UI. Found root cause in CSS visibility rules conflicting with authentication state. Fix implemented and PR opened.
+Good (recognizing meta-conversation):
+User asked: what have I been working on today?
+Agent responded: Here's a summary: 1. Fixed auth bug, 2. Reviewed PR #123...
+Title: Daily work summary and progress review
+Purpose: Generating a comprehensive summary of today's work activities to track progress. Summary completed showing multiple tasks across authentication, code review, and infrastructure work.
 
 Now generate TITLE and PURPOSE for the conversation above.
 
