@@ -118,6 +118,7 @@ Options:
   --format {text,markdown,html}  Output format (default: html)
   --output PATH, -o PATH         Output file path (default: /tmp/worklog.{ext})
   --stdout                       Print to stdout instead of file
+  --date DATE                    Specific date (YYYY-MM-DD, e.g., 2026-06-15)
   --date-offset N                Days offset from today (0=today, -1=yesterday)
   --timezone TZ                  IANA timezone name (default: America/New_York)
 ```
@@ -125,14 +126,20 @@ Options:
 ### Examples
 
 ```bash
-# Generate yesterday's worklog as text to stdout
+# Generate worklog for a specific date
+python3 .agents/skills/worklog/generate_worklog.py --date 2026-06-15 --format text --stdout
+
+# Generate yesterday's worklog (using offset)
 python3 .agents/skills/worklog/generate_worklog.py --format text --stdout --date-offset -1
 
-# Generate markdown for documentation
-python3 .agents/skills/worklog/generate_worklog.py --format markdown -o ~/docs/worklog-$(date +%Y-%m-%d).md
+# Generate markdown for June 20th
+python3 .agents/skills/worklog/generate_worklog.py --date 2026-06-20 --format markdown -o ~/docs/worklog-june-20.md
 
 # Generate HTML with custom timezone
 python3 .agents/skills/worklog/generate_worklog.py --format html --timezone "Europe/London"
+
+# Generate worklog for last Monday (absolute date more intuitive than calculating offset)
+python3 .agents/skills/worklog/generate_worklog.py --date 2026-06-24 --format html
 ```
 
 ## Environment
