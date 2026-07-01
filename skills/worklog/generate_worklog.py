@@ -29,7 +29,7 @@ MIN_ENGAGEMENT_SCORE = int(os.environ.get('MIN_ENGAGEMENT_SCORE', '5'))
 def api_request(url):
     """Make authenticated API request to OpenHands"""
     req = Request(url)
-    req.add_header('Authorization', f'Bearer {API_KEY}')
+    req.add_header('X-Access-Token', API_KEY)
     req.add_header('Accept', 'application/json')
     with urlopen(req) as response:
         return json.loads(response.read())
@@ -100,8 +100,11 @@ def extract_text(content):
 # OPTIMIZED EVENT FETCHING - Single API call per conversation
 # ============================================================================
 
-def fetch_all_events(conv_id, limit=200):
-    """Fetch all events in a single API call (OPTIMIZATION: was 3+ calls)"""
+def fetch_all_events(conv_id, limit=100):
+    """Fetch all events in a single API call (OPTIMIZATION: was 3+ calls)
+    
+    Note: API maximum limit is 100
+    """
     url = f"{BASE_URL}/conversation/{conv_id}/events/search?limit={limit}"
     data = api_request(url)
     return data.get('items', [])
@@ -264,7 +267,8 @@ def gather_conversation_context(conv_id):
     """
     try:
         # OPTIMIZATION: Single API call instead of 3+
-        events = fetch_all_events(conv_id, limit=200)
+        # Note: API max limit is 100
+        events = fetch_all_events(conv_id, limit=100)
         
         if not events:
             return None
