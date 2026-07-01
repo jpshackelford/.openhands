@@ -1,11 +1,11 @@
 # Daily Worklog Generator
 
-Generate an HTML worklog of your OpenHands conversations with synthesized objectives, PR/issue links, and concrete outcomes.
+Generate an HTML worklog of your OpenHands conversations with **LLM-synthesized deep understanding**, PR/issue links, and concrete outcomes.
 
 ## Quick Start
 
 ```bash
-# Generate today's worklog
+# Generate today's worklog (requires LLM API key)
 python3 .agents/skills/worklog/generate_worklog.py
 
 # Serve on port 12000
@@ -16,16 +16,17 @@ python3 .agents/skills/worklog/serve_worklog.py &
 
 ## What It Does
 
-**Analyzes each conversation** from today to determine:
-- 🎯 **Objective**: What you were trying to achieve (synthesized, not quoted)
-- ✅ **Outcomes**: PRs opened, issues filed, with clickable links
+**Uses LLM to deeply understand each conversation**:
+- 🎯 **Synthesized Purpose**: What problem you were solving, why it matters, what was accomplished, what's left
+- 🔗 **PR/Issue Links**: Automatically extracted with numbers (PR #123, Issue #456)
+- ✅ **Concrete Outcomes**: Clickable links to PRs and issues
 - 🕐 **Time**: When the conversation started (US Eastern Time)
 
-**Token-efficient design**:
-- Single API call to list conversations
-- Batched event fetching (2-3 API calls per conversation)
-- Lightweight objective synthesis from user messages
-- Automatic PR/issue link extraction
+**Real synthesis, not quoting**:
+- LLM analyzes user messages, agent responses, and GitHub PR/issue descriptions
+- Generates 1-2 clear sentences explaining the real work
+- No raw quotes or markdown fragments
+- Answers: What? Why? What was done? What's left?
 
 ## Generated Output
 
@@ -44,9 +45,15 @@ Creates `/tmp/worklog.html` with:
 
 ## Environment
 
-Requires:
+**Required:**
 - `OH_API_KEY` - OpenHands Cloud API key
+- `LITELLM_PROXY_KEY` or `OPENAI_API_KEY` or `ANTHROPIC_API_KEY` - LLM API key for synthesis
 - Python 3.9+ with `zoneinfo` support
+
+**Optional:**
+- `GITHUB_TOKEN` - For fetching PR/issue descriptions (highly recommended)
+- `LITELLM_ENDPOINT_URL` - LiteLLM endpoint (default: OpenAI)
+- `SYNTHESIS_MODEL` - Model for synthesis (default: `gpt-4o-mini`)
 
 ## Usage in Automation
 
@@ -87,10 +94,13 @@ Extracts entities:
 ## Token Efficiency
 
 **Per conversation**:
-- 1 call to get user messages (limit 10)
-- 1 call to get finish message
-- 0 calls if conversation has no user messages
+- Data gathering: 2-3 OpenHands API calls (user messages, agent messages, finish message)
+- GitHub API: 0-2 calls for PR/issue details (if GITHUB_TOKEN set)
+- LLM synthesis: 1 call (~300-500 tokens) for title + purpose generation
 
-**Total for 20 conversations**: ~40 API calls, ~2-3K tokens
+**Total for 20 conversations**: 
+- ~60-80 OpenHands API calls
+- ~8-12K tokens (including LLM synthesis)
+- **Still 4-5x cheaper** than full event inspection (~50K tokens)
 
-Compare to full event inspection: ~200 API calls, ~50K tokens
+**Key advantage**: Real understanding vs. raw event data

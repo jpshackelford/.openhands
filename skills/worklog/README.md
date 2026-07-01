@@ -1,6 +1,6 @@
 # 📋 Daily Worklog Skill
 
-Token-efficient worklog generator for OpenHands conversations with synthesized objectives and PR/issue links.
+LLM-powered worklog generator for OpenHands conversations with **deep synthesized understanding** and PR/issue links.
 
 ## Quick Start
 
@@ -19,37 +19,56 @@ python3 .agents/skills/worklog/serve_worklog.py &
 
 For each conversation today, the worklog shows:
 
-- **🎯 Objective**: Synthesized from your messages (not raw quotes)
-- **✅ Outcomes**: Clickable links to PRs/issues created
+- **🎯 Synthesized Purpose**: LLM-generated understanding of what problem was being solved, why it matters, what was accomplished, and what's left
+- **🔗 PR/Issue Links**: Clickable links with numbers (PR #123: Title)
+- **✅ Outcomes**: All PRs and issues with state indicators (→ open, ✓ closed)
 - **🕐 Time**: When the conversation started (US Eastern Time)
-- **🔗 Link**: Direct link to conversation in OpenHands Cloud
+- **📋 Link**: Direct link to conversation in OpenHands Cloud
 
 ## Token Efficiency
 
-**Per 20 conversations: ~40-60 API calls, ~2-3K tokens**
+**Per 20 conversations: ~8-12K tokens**
 
-Compare to full event inspection: ~200 calls, ~50K tokens (17x more expensive!)
+Compare to full event inspection: ~50K tokens (4-5x more expensive!)
 
 ### How It Works
 
-1. **Single batch fetch**: Get all conversations from today (1 API call)
-2. **Per conversation**:
-   - Fetch user messages (1 call, limit 10)
-   - Fetch finish message (1 call, limit 20)
-   - Extract PR/issue URLs from text (no API calls)
-3. **Synthesize objectives**: Pattern matching + entity extraction (no API calls)
+1. **Gather context** (efficient, no LLM):
+   - Batch fetch all conversations from today (1 API call)
+   - Per conversation: user messages, agent messages, finish message (2-3 calls)
+   - Fetch PR/issue details from GitHub API (0-2 calls if GITHUB_TOKEN set)
+
+2. **Synthesize with LLM** (gpt-4o-mini by default):
+   - Send gathered context to LLM with clear examples
+   - LLM generates title and 1-2 sentence purpose
+   - Understands real work, not just actions taken
+   - ~300-500 tokens per conversation
+
+3. **Generate HTML**: Modern, responsive UI with all synthesized insights
 
 ## Features
 
-### Objective Synthesis
+### LLM-Powered Synthesis
 
-Detects patterns in your messages to create concise objectives:
+Uses an LLM (gpt-4o-mini by default) to truly understand each conversation:
 
-- **"rebase" + PR #** → "Rebase and resolve merge conflicts in PR #123"
-- **"file an issue"** → "File GitHub issues for identified bugs/improvements"
-- **"clone OpenHands/repo"** → "Clone and examine repo repository"
-- **Questions** → Preserves your question as objective
-- **Fallback** → Uses cleaned first sentence
+**What it analyzes:**
+- User messages: What you asked for
+- Agent messages: What the agent understood and did
+- Finish messages: What was accomplished
+- PR/issue descriptions: What the actual work is about
+
+**What it generates:**
+- **Title**: Clear 5-10 word description of the real work
+- **Purpose**: 1-2 sentences answering:
+  - What problem was being solved?
+  - Why does it matter?
+  - What was accomplished?
+  - What's left unfinished?
+
+**Example:**
+- ❌ Bad (quoting): "Working on: > **Stacked on #14937**..."
+- ✅ Good (synthesis): "Adding super-admin management endpoints to enable programmatic grant/revoke of admin privileges in the enterprise auth system. Implementation complete and pushed for review."
 
 ### Link Extraction
 
@@ -81,8 +100,12 @@ Modern, responsive design with:
 
 **Required:**
 - `OH_API_KEY` - OpenHands Cloud API key (auto-injected)
+- `LITELLM_PROXY_KEY` or `OPENAI_API_KEY` or `ANTHROPIC_API_KEY` - LLM API key for synthesis
 
 **Optional:**
+- `GITHUB_TOKEN` - For fetching PR/issue descriptions (highly recommended)
+- `LITELLM_ENDPOINT_URL` - LiteLLM endpoint (default: OpenAI)
+- `SYNTHESIS_MODEL` - Model for synthesis (default: `gpt-4o-mini`)
 - Change timezone: Edit `ZoneInfo('America/New_York')` in generator
 - Change port: Edit `PORT = 12000` in server
 

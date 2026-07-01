@@ -2,13 +2,14 @@
 
 ## ✅ What Was Built
 
-A **token-efficient daily worklog system** for OpenHands conversations that:
+An **LLM-powered daily worklog system** for OpenHands conversations that:
 
-1. **Synthesizes objectives** from your messages (not raw quotes)
-2. **Extracts PR/issue links** and makes them clickable
-3. **Generates beautiful HTML** with modern styling
-4. **Serves via HTTP** on port 12000
-5. **Optimized for daily automation** (minimal token usage)
+1. **Uses LLM to deeply understand** each conversation's purpose
+2. **Synthesizes clear explanations** of what, why, what was done, and what's left
+3. **Extracts PR/issue links** with numbers and makes them clickable
+4. **Generates beautiful HTML** with modern styling
+5. **Serves via HTTP** on port 12000
+6. **Optimized for daily automation** (4-5x cheaper than full event inspection)
 
 ## 📁 Files Created
 
@@ -42,38 +43,43 @@ bash .agents/skills/worklog/run_worklog.sh
 
 ## 💡 Key Features
 
-### 1. Token-Efficient Design
+### 1. LLM-Powered Synthesis
 
 **Per 20 conversations:**
-- ~40-60 API calls
-- ~2-3K tokens
-- **17x cheaper** than full event inspection
+- ~60-80 OpenHands API calls (data gathering)
+- ~8-12K tokens (including LLM synthesis)
+- **4-5x cheaper** than full event inspection (~50K tokens)
 
 **How:**
-- Single batch fetch for all conversations
-- Limit user messages to 10 per conversation
-- Extract links from text (no API calls)
-- Synthesize objectives with pattern matching
+- Gather context: user messages, agent messages, finish message, PR/issue details
+- LLM synthesis: ~300-500 tokens per conversation for deep understanding
+- Real synthesis, not pattern matching or quoting
 
-### 2. Objective Synthesis
+### 2. Deep Understanding
 
-Analyzes your messages to understand intent:
+LLM analyzes multiple sources to understand what you really accomplished:
 
-| Pattern | Synthesized Objective |
-|---------|----------------------|
-| "rebase" + PR # | Rebase and resolve merge conflicts in PR #X |
-| "file an issue" | File GitHub issues for identified bugs/improvements |
-| "clone OpenHands/repo" | Clone and examine repo repository |
-| "automation" + "ghost" | Debug why Canvas automation link appears ghosted |
-| Questions | Preserves your question verbatim |
-| Fallback | Cleaned first sentence of your message |
+**Sources analyzed:**
+- User messages: What you asked for
+- Agent messages: What the agent understood and did  
+- Finish messages: What was completed
+- PR descriptions: What the work is actually about
+- Issue descriptions: What problems are being addressed
 
-### 3. Link Extraction
+**Example synthesis:**
 
-Automatically finds and formats:
-- **PR URLs** → `[PR #123] (repo-name)` - clickable
-- **Issue URLs** → `[Issue #456] (repo-name)` - clickable
-- **Multiple issues** → Shows count + first 3 links
+Before (quoting):
+> "Working on: > **Stacked on #14937** (`feat/super-roles`). Please review/merge that PR first..."
+
+After (LLM synthesis):
+> "The merge conflicts in PR #15006 were resolved to ensure the new super-admin management endpoint integrates smoothly with the previously merged super role model. The rebase is complete, and the PR is ready for review and integration."
+
+### 3. Link Extraction with Numbers
+
+Automatically finds and formats with PR/issue numbers:
+- **PR URLs** → `PR #123: Title` - clickable with state indicator (→ open, ✓ closed)
+- **Issue URLs** → `Issue #456: Title` - clickable with state indicator
+- **Multiple items** → Shows up to 2-3 with numbers and titles
 
 ### 4. Modern UI
 
@@ -149,11 +155,13 @@ task: |
 
 | Approach | API Calls | Tokens | Time |
 |----------|-----------|--------|------|
-| **This skill** | 40-60 | 2-3K | 30s |
+| **This skill (LLM-powered)** | 60-80 | 8-12K | 45s |
 | Full event inspection | 200+ | 50K+ | 2min |
 | Manual review | 0 | 0 | 1hr+ |
 
-**Savings:** 17x fewer tokens, 2x faster than full inspection
+**Savings:** 4-5x fewer tokens, slightly faster than full inspection
+
+**Key advantage:** Real understanding vs. raw event data
 
 ## 🎯 Use Cases
 
