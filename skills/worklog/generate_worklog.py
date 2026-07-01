@@ -8,15 +8,15 @@ Key optimizations:
 - Smarter GitHub fetching (only first PR gets full details)
 - Client-side filtering reduces API overhead
 """
-import os, json, sys, re, asyncio, argparse
+import os, json, sys, re, asyncio, argparse, time
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError
 from datetime import datetime, timezone, timedelta
 from zoneinfo import ZoneInfo
 
-API_KEY = os.environ.get('OH_API_KEY')
+API_KEY = os.environ.get('OH_API_KEY') or os.environ.get('OPENHANDS_API_KEY')
 GITHUB_TOKEN = os.environ.get('GITHUB_TOKEN')
-BASE_URL = "https://app.all-hands.dev/api/v1"
+BASE_URL = os.environ.get('OPENHANDS_CLOUD_API_URL', 'https://app.all-hands.dev').rstrip('/') + '/api/v1'
 
 # LLM config for synthesis
 LITELLM_ENDPOINT = os.environ.get('LITELLM_ENDPOINT_URL', 'https://api.openai.com/v1')
@@ -26,36 +26,76 @@ SYNTHESIS_MODEL = os.environ.get('SYNTHESIS_MODEL', 'gpt-4o-mini')
 # Engagement threshold for LLM synthesis (skip conversations below this)
 MIN_ENGAGEMENT_SCORE = int(os.environ.get('MIN_ENGAGEMENT_SCORE', '5'))
 
-def api_request(url):
-    """Make authenticated API request to OpenHands"""
-    req = Request(url)
-    req.add_header('X-Access-Token', API_KEY)
-    req.add_header('Accept', 'application/json')
-    with urlopen(req) as response:
-        return json.loads(response.read())
+# Retry configuration
+MAX_RETRIES = int(os.environ.get('MAX_RETRIES', '5'))
+INITIAL_BACKOFF = float(os.environ.get('INITIAL_BACKOFF', '1.0'))
 
-def github_api_request(url):
-    """Make authenticated GitHub API request"""
-    if not GITHUB_TOKEN:
-        return None
-    req = Request(url)
-    req.add_header('Authorization', f'token {GITHUB_TOKEN}')
-    req.add_header('Accept', 'application/vnd.github.v3+json')
-    try:
+def retry_with_backoff(func, *args, max_retries=MAX_RETRIES, initial_backoff=INITIAL_BACKOFF, **kwargs):
+    """Retry a function with exponential backoff for rate limits and transient errors"""
+    import random
+    
+    for attempt in range(max_retries):
+        try:
+            return func(*args, **kwargs)
+        except HTTPError as e:
+            # Retry on rate limits (429) and server errors (5xx)
+            if e.code == 429 or (500 <= e.code < 600):
+                if attempt < max_retries - 1:
+                    # Exponential backoff with jitter
+                    backoff = initial_backoff * (2 ** attempt) + random.uniform(0, 1)
+                    print(f"  Rate limit/server error (HTTP {e.code}), retrying in {backoff:.1f}s (attempt {attempt + 1}/{max_retries})...", file=sys.stderr)
+                    time.sleep(backoff)
+                    continue
+            # Don't retry on other errors (401, 403, 404, etc.)
+            raise
+        except Exception as e:
+            # Don't retry on non-HTTP errors
+            raise
+    
+    # If we exhausted all retries
+    raise Exception(f"Max retries ({max_retries}) exceeded")
+
+def api_request(url):
+    """Make authenticated API request to OpenHands with retry logic"""
+    def _make_request():
+        req = Request(url)
+        req.add_header('X-Access-Token', API_KEY)
+        req.add_header('Accept', 'application/json')
         with urlopen(req) as response:
             return json.loads(response.read())
+    
+    return retry_with_backoff(_make_request)
+
+def github_api_request(url):
+    """Make authenticated GitHub API request with retry logic"""
+    if not GITHUB_TOKEN:
+        return None
+    
+    def _make_request():
+        req = Request(url)
+        req.add_header('Authorization', f'token {GITHUB_TOKEN}')
+        req.add_header('Accept', 'application/vnd.github.v3+json')
+        with urlopen(req) as response:
+            return json.loads(response.read())
+    
+    try:
+        return retry_with_backoff(_make_request)
     except HTTPError as e:
-        print(f"  GitHub API error: {e}", file=sys.stderr)
+        print(f"  GitHub API error: HTTP {e.code} {e.reason}", file=sys.stderr)
+        return None
+    except Exception as e:
+        print(f"  GitHub API error: {type(e).__name__}: {e}", file=sys.stderr)
         return None
 
 def llm_synthesize(prompt, max_tokens=300):
-    """Make synchronous LLM call for synthesis"""
+    """Make synchronous LLM call for synthesis with retry logic"""
     if not LITELLM_KEY:
         print("  Warning: No LLM key available for synthesis", file=sys.stderr)
         return None
     
-    try:
-        req = Request(f"{LITELLM_ENDPOINT}/chat/completions")
+    def _make_llm_request():
+        url = f"{LITELLM_ENDPOINT.rstrip('/')}/chat/completions"
+        req = Request(url, method='POST')
         req.add_header('Authorization', f'Bearer {LITELLM_KEY}')
         req.add_header('Content-Type', 'application/json')
         
@@ -74,8 +114,14 @@ def llm_synthesize(prompt, max_tokens=300):
             result = json.loads(response.read())
             return result['choices'][0]['message']['content'].strip()
     
+    try:
+        return retry_with_backoff(_make_llm_request)
+    except HTTPError as e:
+        error_body = e.read().decode('utf-8', errors='ignore')[:200] if e.fp else ''
+        print(f"  LLM synthesis error: HTTP {e.code} {e.reason} - {error_body}", file=sys.stderr)
+        return None
     except Exception as e:
-        print(f"  LLM synthesis error: {e}", file=sys.stderr)
+        print(f"  LLM synthesis error: {type(e).__name__}: {e}", file=sys.stderr)
         return None
 
 # ============================================================================
@@ -829,6 +875,42 @@ def render_html(data):
 # MAIN - CLI entry point
 # ============================================================================
 
+def validate_environment():
+    """Validate required environment variables and give helpful error messages"""
+    errors = []
+    warnings = []
+    
+    # Check required: OpenHands API key
+    if not API_KEY:
+        errors.append("❌ Missing required OpenHands API key")
+        errors.append("   Set one of: OH_API_KEY or OPENHANDS_API_KEY")
+        errors.append("   Get your key from: https://app.all-hands.dev/settings")
+    
+    # Check recommended: LLM key for synthesis
+    if not LITELLM_KEY:
+        warnings.append("⚠️  No LLM API key found - synthesis will be disabled")
+        warnings.append("   Set one of: LITELLM_PROXY_KEY or OPENAI_API_KEY")
+        warnings.append("   Without this, you'll only get basic conversation titles")
+    
+    # Check optional: GitHub token for PR/issue details
+    if not GITHUB_TOKEN:
+        warnings.append("⚠️  GITHUB_TOKEN not set - PR/issue details will be limited")
+        warnings.append("   Set GITHUB_TOKEN to fetch full PR and issue descriptions")
+    
+    # Print warnings
+    if warnings:
+        for warning in warnings:
+            print(warning, file=sys.stderr)
+        print(file=sys.stderr)
+    
+    # Exit on errors
+    if errors:
+        print("\n🛑 Environment validation failed:\n", file=sys.stderr)
+        for error in errors:
+            print(error, file=sys.stderr)
+        print("\nFor more details, see the skill documentation.", file=sys.stderr)
+        sys.exit(1)
+
 def main():
     """Main entry point with argument parsing"""
     parser = argparse.ArgumentParser(
@@ -866,6 +948,9 @@ def main():
     )
     
     args = parser.parse_args()
+    
+    # Validate environment before doing any work
+    validate_environment()
     
     # Calculate date offset from absolute date if provided
     date_offset = args.date_offset
