@@ -1,6 +1,6 @@
 # Daily Worklog Generator
 
-Generate a worklog of your OpenHands conversations with **LLM-synthesized deep understanding**, PR/issue links, and concrete outcomes. Supports multiple output formats: **text**, **markdown**, and **HTML**.
+Generate a worklog of your OpenHands conversations with **LLM-synthesized deep understanding**, PR/issue links, and concrete outcomes. Supports multiple output formats: **text**, **markdown**, and **HTML** with **tabbed interface** to separate manual work from automation-triggered conversations.
 
 ## 🎯 Agent Guidance: Handling Worklog Requests
 
@@ -126,6 +126,10 @@ python3 .agents/skills/worklog/serve_worklog.py &
 - 🔗 **PR/Issue Links**: Automatically extracted with numbers (PR #123, Issue #456)
 - ✅ **Concrete Outcomes**: Clickable links to PRs and issues
 - 🕐 **Time**: When the conversation started (US Eastern Time)
+- 🤖 **Automation Metadata**: For automation-triggered conversations, shows:
+  - Automation name (e.g., "Daily Report Generator")
+  - Trigger type (cron, event)
+  - Automation ID and Run ID for traceability
 
 **Real synthesis, not quoting**:
 - LLM analyzes user messages, agent responses, and GitHub PR/issue descriptions
@@ -157,11 +161,17 @@ Rich visual dashboard suitable for:
 - Hosted worklog servers
 - Team sharing
 
+**HTML includes tabbed interface:**
+- **All Conversations**: Complete view of all work
+- **Manual Work**: Conversations you initiated directly
+- **Automations**: Conversations triggered by automations (with automation name, trigger type, and IDs)
+
 All formats include:
 - Synthesized objectives (not raw quotes)
 - Clickable PR and issue links
 - US Eastern Time display
 - Conversation IDs and links
+- Automation metadata (name, trigger type, automation ID, run ID)
 
 ## Files
 

@@ -579,7 +579,7 @@ def gather_worklog_data(date_offset=0, timezone_name='America/New_York'):
             title, purpose = synthesize_title_and_purpose(context)
             outcomes = format_outcomes(context)
         
-        # Store structured data
+        # Store structured data (including trigger field for automation detection)
         conversations_data.append({
             'index': i,
             'id': c['id'],
@@ -589,19 +589,29 @@ def gather_worklog_data(date_offset=0, timezone_name='America/New_York'):
             'outcomes': outcomes,
             'time': time_str,
             'time_obj': dt_et,
-            'context': context
+            'context': context,
+            'trigger': c.get('trigger'),  # Capture trigger type (e.g., 'automation', 'gui', etc.)
+            'tags': c.get('tags', {})  # Capture tags as well
         })
+    
+    # Categorize conversations by trigger type
+    manual_conversations = [c for c in conversations_data if c['trigger'] != 'automation']
+    automation_conversations = [c for c in conversations_data if c['trigger'] == 'automation']
     
     return {
         'date': today_et,
         'date_obj': now_et,
         'timezone': timezone_name,
         'conversations': conversations_data,
-        'total_count': len(conversations_data)
+        'manual_conversations': manual_conversations,
+        'automation_conversations': automation_conversations,
+        'total_count': len(conversations_data),
+        'manual_count': len(manual_conversations),
+        'automation_count': len(automation_conversations)
     }
 
-def generate_html_header(today_et, conv_count):
-    """Generate HTML header and styling"""
+def generate_html_header(today_et, conv_count, manual_count, automation_count):
+    """Generate HTML header and styling with tabs support"""
     return f'''<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -642,6 +652,7 @@ def generate_html_header(today_et, conv_count):
             display: flex;
             gap: 2rem;
             margin-top: 1.5rem;
+            flex-wrap: wrap;
         }}
         .stat {{
             background: rgba(255,255,255,0.2);
@@ -658,8 +669,47 @@ def generate_html_header(today_et, conv_count):
             font-size: 0.9rem;
             opacity: 0.9;
         }}
-        main {{
+        
+        /* Tab styling */
+        .tabs {{
+            display: flex;
+            gap: 0;
+            background: #e9ecef;
+            padding: 0;
+            margin: 0;
+            border-bottom: 2px solid #dee2e6;
+        }}
+        .tab-button {{
+            background: #e9ecef;
+            border: none;
+            padding: 1rem 2rem;
+            cursor: pointer;
+            font-size: 1rem;
+            font-weight: 500;
+            color: #495057;
+            transition: all 0.3s ease;
+            border-bottom: 3px solid transparent;
+        }}
+        .tab-button:hover {{
+            background: #dee2e6;
+            color: #212529;
+        }}
+        .tab-button.active {{
+            background: white;
+            color: #667eea;
+            border-bottom: 3px solid #667eea;
+        }}
+        .tab-content {{
+            display: none;
             padding: 2rem 3rem;
+        }}
+        .tab-content.active {{
+            display: block;
+        }}
+        
+        /* Conversation cards */
+        main {{
+            padding: 0;
         }}
         .conv {{
             background: #f8f9fa;
@@ -730,12 +780,24 @@ def generate_html_header(today_et, conv_count):
             font-size: 0.85rem;
             color: #6c757d;
             margin-top: 0.75rem;
+            flex-wrap: wrap;
         }}
         .badge {{
             background: #e9ecef;
             padding: 0.25rem 0.5rem;
             border-radius: 4px;
             font-family: 'Courier New', monospace;
+        }}
+        .trigger-badge {{
+            background: #fff3cd;
+            color: #856404;
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
+            font-size: 0.8rem;
+        }}
+        .trigger-badge.automation {{
+            background: #d1ecf1;
+            color: #0c5460;
         }}
         footer {{
             text-align: center;
@@ -748,27 +810,64 @@ def generate_html_header(today_et, conv_count):
             body {{
                 padding: 1rem;
             }}
-            header, main {{
+            header {{
+                padding: 1.5rem;
+            }}
+            .tab-content {{
                 padding: 1.5rem;
             }}
             h1 {{
                 font-size: 2rem;
             }}
+            .tab-button {{
+                padding: 0.75rem 1rem;
+                font-size: 0.9rem;
+            }}
         }}
     </style>
+    <script>
+        function showTab(tabName) {{
+            // Hide all tab contents
+            const contents = document.querySelectorAll('.tab-content');
+            contents.forEach(content => content.classList.remove('active'));
+            
+            // Deactivate all tab buttons
+            const buttons = document.querySelectorAll('.tab-button');
+            buttons.forEach(button => button.classList.remove('active'));
+            
+            // Show selected tab content
+            document.getElementById(tabName).classList.add('active');
+            
+            // Activate selected tab button
+            event.currentTarget.classList.add('active');
+        }}
+    </script>
 </head>
 <body>
     <div class="container">
         <header>
-            <h1>📋 Worklog v5</h1>
+            <h1>📋 Worklog v6</h1>
             <div class="subtitle">{today_et} • LLM-Synthesized</div>
             <div class="stats">
                 <div class="stat">
                     <strong>{conv_count}</strong>
-                    <span>Conversations</span>
+                    <span>Total Conversations</span>
+                </div>
+                <div class="stat">
+                    <strong>{manual_count}</strong>
+                    <span>Manual Work</span>
+                </div>
+                <div class="stat">
+                    <strong>{automation_count}</strong>
+                    <span>Automations</span>
                 </div>
             </div>
         </header>
+        <div class="tabs">
+            <button class="tab-button active" onclick="showTab('all-tab')">All Conversations ({conv_count})</button>
+            <button class="tab-button" onclick="showTab('manual-tab')">Manual Work ({manual_count})</button>
+            <button class="tab-button" onclick="showTab('automation-tab')">Automations ({automation_count})</button>
+        </div>
         <main>'''
 
 # ============================================================================
@@ -780,12 +879,22 @@ def render_text(data):
     lines = []
     lines.append(f"📋 Worklog for {data['date']}")
     lines.append("=" * 70)
-    lines.append(f"Total conversations: {data['total_count']}")
+    lines.append(f"Total conversations: {data['total_count']} (Manual: {data['manual_count']}, Automations: {data['automation_count']})")
     lines.append("")
     
     for conv in data['conversations']:
+        tags = conv.get('tags', {})
+        trigger_type = conv.get('trigger')
+        
         lines.append(f"{conv['index']}. {conv['synthesized_title']}")
         lines.append(f"   Time: {conv['time']}")
+        
+        # Show automation info if available
+        if trigger_type == 'automation':
+            automation_name = tags.get('automationname', 'Unknown automation')
+            automation_trigger = tags.get('automationtrigger', 'unknown')
+            lines.append(f"   🤖 Automation: {automation_name} ({automation_trigger})")
+        
         lines.append(f"   {conv['purpose']}")
         
         if conv['outcomes']:
@@ -796,6 +905,13 @@ def render_text(data):
                 lines.append(f"      {clean_outcome}")
         
         lines.append(f"   Conversation ID: {conv['id'][:8]}")
+        
+        # Show automation IDs if available
+        if tags.get('automationid'):
+            lines.append(f"   Automation ID: {tags['automationid'][:8]}")
+        if tags.get('automationrunid'):
+            lines.append(f"   Run ID: {tags['automationrunid'][:8]}")
+        
         lines.append(f"   Link: https://app.all-hands.dev/conversations/{conv['id']}")
         lines.append("")
     
@@ -806,13 +922,24 @@ def render_markdown(data):
     lines = []
     lines.append(f"# 📋 Worklog for {data['date']}")
     lines.append("")
-    lines.append(f"**Total conversations:** {data['total_count']}")
+    lines.append(f"**Total conversations:** {data['total_count']} (Manual: {data['manual_count']}, Automations: {data['automation_count']})")
     lines.append("")
     
     for conv in data['conversations']:
+        tags = conv.get('tags', {})
+        trigger_type = conv.get('trigger')
+        
         lines.append(f"## {conv['index']}. {conv['synthesized_title']}")
         lines.append("")
         lines.append(f"**Time:** {conv['time']} | [View conversation](https://app.all-hands.dev/conversations/{conv['id']})")
+        
+        # Show automation info if available
+        if trigger_type == 'automation':
+            automation_name = tags.get('automationname', 'Unknown automation')
+            automation_trigger = tags.get('automationtrigger', 'unknown')
+            lines.append("")
+            lines.append(f"🤖 **Automation:** {automation_name} ({automation_trigger})")
+        
         lines.append("")
         lines.append(conv['purpose'])
         lines.append("")
@@ -827,18 +954,39 @@ def render_markdown(data):
             lines.append("")
         
         lines.append(f"_Conversation ID: `{conv['id'][:8]}`_")
+        
+        # Show automation IDs if available
+        if tags.get('automationid'):
+            lines.append(f" | _Automation ID: `{tags['automationid'][:8]}`_")
+        if tags.get('automationrunid'):
+            lines.append(f" | _Run ID: `{tags['automationrunid'][:8]}`_")
+        
         lines.append("")
         lines.append("---")
         lines.append("")
     
     return '\n'.join(lines)
 
-def render_html(data):
-    """Render worklog data as HTML"""
-    html = generate_html_header(data['date'], data['total_count'])
+def render_conversation_card(conv):
+    """Render a single conversation card"""
+    trigger_type = conv.get('trigger', 'unknown')
+    tags = conv.get('tags', {})
     
-    for conv in data['conversations']:
-        html += f'''
+    # Extract automation metadata from tags
+    automation_name = tags.get('automationname')
+    automation_id = tags.get('automationid')
+    automation_run_id = tags.get('automationrunid')
+    automation_trigger_type = tags.get('automationtrigger')
+    
+    # Determine trigger label and class
+    if trigger_type == 'automation':
+        trigger_label = f'🤖 {automation_name}' if automation_name else '🤖 automation'
+        trigger_class = 'automation'
+    else:
+        trigger_label = f'👤 {trigger_type or "manual"}'
+        trigger_class = ''
+    
+    html = f'''
             <div class="conv">
                 <h2 class="conv-title">{conv['index']}. {conv['synthesized_title']}</h2>
                 <div class="conv-header">
@@ -848,22 +996,77 @@ def render_html(data):
                     <span class="conv-time">{conv['time']}</span>
                 </div>
                 <div class="conv-purpose">{conv['purpose']}</div>'''
-        
-        if conv['outcomes']:
-            outcomes_html = '<br>'.join(conv['outcomes'])
-            html += f'''
-                <div class="conv-outcomes">{outcomes_html}</div>'''
-        
+    
+    if conv['outcomes']:
+        outcomes_html = '<br>'.join(conv['outcomes'])
         html += f'''
+                <div class="conv-outcomes">{outcomes_html}</div>'''
+    
+    # Build metadata badges
+    html += f'''
                 <div class="meta">
                     <span class="badge">🆔 {conv["id"][:8]}</span>
+                    <span class="trigger-badge {trigger_class}">{trigger_label}</span>'''
+    
+    # Add automation-specific metadata if available
+    if automation_trigger_type:
+        html += f'''
+                    <span class="badge">⏰ {automation_trigger_type}</span>'''
+    
+    if automation_id:
+        html += f'''
+                    <span class="badge" title="Automation ID: {automation_id}">🔧 {automation_id[:8]}</span>'''
+    
+    if automation_run_id:
+        html += f'''
+                    <span class="badge" title="Run ID: {automation_run_id}">▶️ {automation_run_id[:8]}</span>'''
+    
+    html += '''
                 </div>
             </div>'''
+    
+    return html
+
+def render_html(data):
+    """Render worklog data as HTML with tabs for manual vs automation conversations"""
+    html = generate_html_header(
+        data['date'], 
+        data['total_count'],
+        data['manual_count'],
+        data['automation_count']
+    )
+    
+    # All Conversations Tab
+    html += '<div id="all-tab" class="tab-content active">\n'
+    if data['conversations']:
+        for conv in data['conversations']:
+            html += render_conversation_card(conv)
+    else:
+        html += '<p style="text-align: center; color: #6c757d; padding: 2rem;">No conversations found.</p>'
+    html += '</div>\n'
+    
+    # Manual Work Tab
+    html += '<div id="manual-tab" class="tab-content">\n'
+    if data['manual_conversations']:
+        for conv in data['manual_conversations']:
+            html += render_conversation_card(conv)
+    else:
+        html += '<p style="text-align: center; color: #6c757d; padding: 2rem;">No manual conversations found.</p>'
+    html += '</div>\n'
+    
+    # Automations Tab
+    html += '<div id="automation-tab" class="tab-content">\n'
+    if data['automation_conversations']:
+        for conv in data['automation_conversations']:
+            html += render_conversation_card(conv)
+    else:
+        html += '<p style="text-align: center; color: #6c757d; padding: 2rem;">No automation conversations found.</p>'
+    html += '</div>\n'
     
     html += '''
         </main>
         <footer>
-            Generated with OpenHands Cloud API + GitHub API + LLM Synthesis v5 (Optimized)
+            Generated with OpenHands Cloud API + GitHub API + LLM Synthesis v6 (Optimized with Tabs)
         </footer>
     </div>
 </body>
