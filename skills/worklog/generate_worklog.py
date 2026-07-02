@@ -636,9 +636,9 @@ def generate_html_header(today_et, conv_count):
             --accent-primary: #60a5fa;
             --accent-hover: #93c5fd;
             --border-color: var(--cool-grey-800);
-            --success-bg: rgba(34, 197, 94, 0.1);
-            --success-border: #22c55e;
-            --success-text: #4ade80;
+            --success-bg: rgba(96, 165, 250, 0.05);
+            --success-border: var(--cool-grey-700);
+            --success-text: var(--text-secondary);
         }}
         
         * {{
@@ -817,6 +817,13 @@ def generate_html_header(today_et, conv_count):
             font-size: 0.9rem;
         }}
         
+        footer .version {{
+            font-size: 0.7rem;
+            opacity: 0.6;
+            margin-top: 0.25rem;
+            display: block;
+        }}
+        
         @media (max-width: 768px) {{
             body {{
                 padding: 1rem;
@@ -837,7 +844,7 @@ def generate_html_header(today_et, conv_count):
 <body>
     <div class="container">
         <header>
-            <h1>📋 Worklog v6</h1>
+            <h1>📋 Worklog</h1>
             <div class="subtitle">{today_et} • LLM-Synthesized</div>
             <div class="stats">
                 <div class="stat">
@@ -940,7 +947,8 @@ def render_html(data):
     html += '''
         </main>
         <footer>
-            Generated with OpenHands Cloud API + GitHub API + LLM Synthesis v5 (Optimized)
+            Generated with OpenHands Cloud API + GitHub API + LLM Synthesis
+            <span class="version">v6</span>
         </footer>
     </div>
 </body>
