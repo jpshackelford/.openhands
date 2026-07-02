@@ -601,7 +601,7 @@ def gather_worklog_data(date_offset=0, timezone_name='America/New_York'):
     }
 
 def generate_html_header(today_et, conv_count):
-    """Generate HTML header and styling"""
+    """Generate HTML header and styling - Agent Canvas themed"""
     return f'''<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -609,76 +609,131 @@ def generate_html_header(today_et, conv_count):
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Worklog {today_et}</title>
     <style>
+        :root {{
+            /* Agent Canvas cool-grey palette (neutral theme) */
+            --cool-grey-50: #F7F7F7;
+            --cool-grey-100: #ECECEC;
+            --cool-grey-200: #DCDCDC;
+            --cool-grey-300: #BEBEBE;
+            --cool-grey-400: #979797;
+            --cool-grey-500: #737373;
+            --cool-grey-600: #565656;
+            --cool-grey-700: #404040;
+            --cool-grey-800: #313131;
+            --cool-grey-900: #282828;
+            --cool-grey-925: #202020;
+            --cool-grey-950: #181818;
+            --cool-grey-975: #101010;
+            
+            /* Semantic colors matching Agent Canvas */
+            --bg-primary: var(--cool-grey-950);
+            --bg-secondary: var(--cool-grey-900);
+            --bg-tertiary: var(--cool-grey-925);
+            --bg-elevated: var(--cool-grey-800);
+            --text-primary: var(--cool-grey-100);
+            --text-secondary: var(--cool-grey-300);
+            --text-tertiary: var(--cool-grey-400);
+            --accent-primary: #60a5fa;
+            --accent-hover: #93c5fd;
+            --border-color: var(--cool-grey-800);
+            --success-bg: rgba(96, 165, 250, 0.05);
+            --success-border: var(--cool-grey-700);
+            --success-text: var(--text-secondary);
+        }}
+        
+        * {{
+            box-sizing: border-box;
+        }}
+        
         body {{
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: var(--bg-primary);
+            color: var(--text-primary);
             padding: 2rem;
             min-height: 100vh;
             margin: 0;
+            line-height: 1.6;
         }}
+        
         .container {{
             max-width: 1400px;
             margin: 0 auto;
-            background: white;
+            background: var(--bg-secondary);
             border-radius: 12px;
-            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            border: 1px solid var(--border-color);
             overflow: hidden;
         }}
+        
         header {{
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
+            background: var(--bg-tertiary);
+            border-bottom: 1px solid var(--border-color);
             padding: 2rem 3rem;
         }}
+        
         h1 {{
             font-size: 2.5rem;
             margin: 0 0 0.5rem 0;
             font-weight: 700;
+            color: var(--text-primary);
         }}
+        
         .subtitle {{
             font-size: 1.1rem;
-            opacity: 0.9;
+            color: var(--text-secondary);
         }}
+        
         .stats {{
             display: flex;
             gap: 2rem;
             margin-top: 1.5rem;
         }}
+        
         .stat {{
-            background: rgba(255,255,255,0.2);
+            background: var(--bg-elevated);
+            border: 1px solid var(--border-color);
             padding: 0.75rem 1.25rem;
             border-radius: 8px;
-            backdrop-filter: blur(10px);
         }}
+        
         .stat strong {{
             font-size: 1.5rem;
             display: block;
             font-weight: 700;
+            color: var(--accent-primary);
         }}
+        
         .stat span {{
             font-size: 0.9rem;
-            opacity: 0.9;
+            color: var(--text-secondary);
         }}
+        
         main {{
             padding: 2rem 3rem;
         }}
+        
         .conv {{
-            background: #f8f9fa;
-            border-left: 4px solid #667eea;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
+            border-left: 3px solid var(--accent-primary);
             padding: 1.5rem;
-            margin-bottom: 2rem;
+            margin-bottom: 1.5rem;
             border-radius: 8px;
-            transition: all 0.3s ease;
+            transition: all 0.2s ease;
         }}
+        
         .conv:hover {{
-            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-            transform: translateX(4px);
+            border-left-width: 4px;
+            background: var(--bg-elevated);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
         }}
+        
         .conv-title {{
             font-size: 1.4rem;
             font-weight: 600;
-            color: #2c3e50;
+            color: var(--text-primary);
             margin: 0 0 0.75rem 0;
         }}
+        
         .conv-header {{
             display: flex;
             justify-content: space-between;
@@ -687,63 +742,88 @@ def generate_html_header(today_et, conv_count):
             flex-wrap: wrap;
             gap: 0.5rem;
         }}
+        
         .conv-link {{
             font-size: 0.9rem;
-            color: #667eea;
+            color: var(--accent-primary);
             text-decoration: none;
+            transition: color 0.2s ease;
         }}
+        
         .conv-link:hover {{
+            color: var(--accent-hover);
             text-decoration: underline;
         }}
+        
         .conv-time {{
             font-size: 0.9rem;
-            color: #6c757d;
+            color: var(--text-tertiary);
             white-space: nowrap;
         }}
+        
         .conv-purpose {{
-            color: #495057;
+            color: var(--text-secondary);
             line-height: 1.7;
             margin: 1rem 0;
             font-size: 1.05rem;
             font-weight: 400;
         }}
+        
         .conv-outcomes {{
-            background: #e8f5e9;
-            border-left: 3px solid #4caf50;
-            padding: 0.75rem;
+            background: var(--success-bg);
+            border-left: 3px solid var(--success-border);
+            padding: 0.75rem 1rem;
             margin-top: 1rem;
-            border-radius: 4px;
+            border-radius: 6px;
             font-size: 0.95rem;
-            color: #2e7d32;
+            color: var(--success-text);
         }}
+        
         .conv-outcomes a {{
-            color: #1976d2;
+            color: var(--accent-primary);
             text-decoration: none;
             font-weight: 500;
+            transition: color 0.2s ease;
         }}
+        
         .conv-outcomes a:hover {{
+            color: var(--accent-hover);
             text-decoration: underline;
         }}
+        
         .meta {{
             display: flex;
             gap: 1rem;
             font-size: 0.85rem;
-            color: #6c757d;
+            color: var(--text-tertiary);
             margin-top: 0.75rem;
         }}
+        
         .badge {{
-            background: #e9ecef;
+            background: var(--bg-elevated);
+            border: 1px solid var(--border-color);
             padding: 0.25rem 0.5rem;
             border-radius: 4px;
             font-family: 'Courier New', monospace;
+            color: var(--text-secondary);
         }}
+        
         footer {{
             text-align: center;
             padding: 1.5rem;
-            background: #f8f9fa;
-            color: #6c757d;
+            background: var(--bg-tertiary);
+            border-top: 1px solid var(--border-color);
+            color: var(--text-tertiary);
             font-size: 0.9rem;
         }}
+        
+        footer .version {{
+            font-size: 0.7rem;
+            opacity: 0.6;
+            margin-top: 0.25rem;
+            display: block;
+        }}
+        
         @media (max-width: 768px) {{
             body {{
                 padding: 1rem;
@@ -754,13 +834,17 @@ def generate_html_header(today_et, conv_count):
             h1 {{
                 font-size: 2rem;
             }}
+            .stats {{
+                flex-direction: column;
+                gap: 1rem;
+            }}
         }}
     </style>
 </head>
 <body>
     <div class="container">
         <header>
-            <h1>📋 Worklog v5</h1>
+            <h1>📋 Worklog</h1>
             <div class="subtitle">{today_et} • LLM-Synthesized</div>
             <div class="stats">
                 <div class="stat">
@@ -863,7 +947,8 @@ def render_html(data):
     html += '''
         </main>
         <footer>
-            Generated with OpenHands Cloud API + GitHub API + LLM Synthesis v5 (Optimized)
+            Generated with OpenHands Cloud API + GitHub API + LLM Synthesis
+            <span class="version">v6</span>
         </footer>
     </div>
 </body>
