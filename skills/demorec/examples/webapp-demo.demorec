@@ -1,0 +1,83 @@
+# webapp-demo.demorec
+# Template for demonstrating a web application feature
+# Combines terminal (starting server) and browser (using the app)
+Output webapp-demo.mp4
+Set Width 1280
+Set Height 720
+
+# @voice edge:jenny
+
+# ─────────────────────────────────────
+# TERMINAL: Start the application
+# ─────────────────────────────────────
+@mode terminal
+Set Theme "Dracula"
+
+# @narrate:before "Let's start the development server."
+Type "npm run dev"
+Enter
+Sleep 3s
+
+# @narrate:after "Server is running on port 3000."
+Sleep 1s
+
+# ─────────────────────────────────────
+# BROWSER: Demonstrate the feature
+# ─────────────────────────────────────
+@mode browser
+
+# @narrate:before "Now let's open the application."
+Navigate "http://localhost:3000"
+Sleep 2s
+
+# @narrate:after "Here's the main dashboard."
+Sleep 1s
+
+# @narrate:before "Let me show you the new settings panel."
+Click "#settings-button"
+Sleep 1s
+
+Wait "#settings-panel"
+Sleep 1s
+
+Highlight "#settings-panel"
+Sleep 0.5s
+
+# @narrate:after "This panel lets you customize all preferences."
+Sleep 2s
+
+Unhighlight "#settings-panel"
+
+# @narrate:before "Let's update a setting."
+Click "#theme-dropdown"
+Sleep 0.5s
+
+Click "[data-value='dark']"
+Sleep 1s
+
+# @narrate:after "The theme changes instantly without a page reload."
+Sleep 2s
+
+# @narrate:before "Now let's save our changes."
+Click "#save-button"
+Sleep 1s
+
+Wait ".toast-success"
+Sleep 1s
+
+# @narrate:after "Done. The settings are persisted automatically."
+Sleep 2s
+
+# ─────────────────────────────────────
+# TERMINAL: Show logs
+# ─────────────────────────────────────
+@mode terminal
+
+# @narrate:before "And we can see the save request in the server logs."
+Sleep 2s
+
+Ctrl+C
+Sleep 1s
+
+# @narrate:after "That's the new settings feature in action."
+Sleep 1s
