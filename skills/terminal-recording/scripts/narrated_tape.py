@@ -9,6 +9,7 @@ and outputs a compiled tape + audio files ready for final mixing.
 Usage:
     python narrated_tape.py input.tape --output-dir ./build
     python narrated_tape.py input.tape --voice "Adam" --render
+    python narrated_tape.py input.tape --timeline  # Show timing analysis
 
 Narration Macros:
     # @voice eleven:<voice_name>     - Set ElevenLabs voice (default: Adam)
@@ -16,6 +17,7 @@ Narration Macros:
     # @narrate:during "text"         - Speak while action runs  
     # @narrate:after "text"          - Action, then speak
     # @narrate:wait                  - Wait for all pending speech
+    # @exec-time:Xs                  - Hint: next command takes X seconds
 
 Environment:
     ELEVENLABS_API_KEY - Required for TTS generation
@@ -43,13 +45,27 @@ class NarrationSegment:
     start_time_ms: int = 0
 
 
+@dataclass 
+class TimelineEvent:
+    """An event in the timeline for diagnostic output."""
+    time_ms: int
+    duration_ms: int
+    event_type: str  # 'narration', 'type', 'enter', 'sleep', 'hidden', 'show', 'exec'
+    description: str
+    line_number: int = 0
+    issues: list = field(default_factory=list)
+
+
 @dataclass
 class TapeConfig:
     """Configuration extracted from tape file."""
     voice: str = "Adam"
     voice_id: Optional[str] = None
     output_file: Optional[str] = None
+    typing_speed_ms: int = 50  # Default typing speed per character
+    enter_delay_ms: int = 50   # Time for Enter key press
     segments: list = field(default_factory=list)
+    exec_time_hints: dict = field(default_factory=dict)  # line_number -> ms
 
 
 # ElevenLabs voice name to ID mapping (common voices)
@@ -68,7 +84,7 @@ ELEVENLABS_VOICES = {
 
 def parse_tape_file(tape_path: Path) -> tuple[list[str], TapeConfig]:
     """
-    Parse a tape file and extract narration macros.
+    Parse a tape file and extract narration macros, settings, and timing hints.
     
     Returns:
         tuple of (original_lines, TapeConfig with segments)
@@ -76,26 +92,58 @@ def parse_tape_file(tape_path: Path) -> tuple[list[str], TapeConfig]:
     config = TapeConfig()
     lines = tape_path.read_text().splitlines()
     
-    # Regex patterns for narration macros
+    # Regex patterns
     voice_pattern = re.compile(r'#\s*@voice\s+eleven:(\w+)', re.IGNORECASE)
     narrate_pattern = re.compile(r'#\s*@narrate:(\w+)(?:\s+"([^"]*)")?', re.IGNORECASE)
+    exec_time_pattern = re.compile(r'#\s*@exec-time:\s*(\d+(?:\.\d+)?)(ms|s)?', re.IGNORECASE)
     output_pattern = re.compile(r'^Output\s+(.+)$', re.IGNORECASE)
+    typing_speed_pattern = re.compile(r'^Set\s+TypingSpeed\s+(\d+)(ms|s)?$', re.IGNORECASE)
+    
+    pending_exec_time = None  # Store exec-time hint for next command
     
     for i, line in enumerate(lines):
+        stripped = line.strip()
+        
         # Check for voice setting
-        voice_match = voice_pattern.match(line.strip())
+        voice_match = voice_pattern.match(stripped)
         if voice_match:
             config.voice = voice_match.group(1)
             continue
         
         # Check for output file
-        output_match = output_pattern.match(line.strip())
+        output_match = output_pattern.match(stripped)
         if output_match:
             config.output_file = output_match.group(1).strip()
             continue
+        
+        # Check for TypingSpeed setting
+        typing_match = typing_speed_pattern.match(stripped)
+        if typing_match:
+            value = int(typing_match.group(1))
+            unit = typing_match.group(2) or 'ms'
+            if unit.lower() == 's':
+                value *= 1000
+            config.typing_speed_ms = value
+            continue
+        
+        # Check for exec-time hint
+        exec_match = exec_time_pattern.match(stripped)
+        if exec_match:
+            value = float(exec_match.group(1))
+            unit = exec_match.group(2) or 's'
+            if unit.lower() == 's':
+                value *= 1000
+            pending_exec_time = int(value)
+            continue
+        
+        # If we have a pending exec-time, apply it to the next Type or Enter
+        if pending_exec_time is not None:
+            if stripped.startswith('Type ') or stripped == 'Enter':
+                config.exec_time_hints[i] = pending_exec_time
+                pending_exec_time = None
             
         # Check for narration macro
-        narrate_match = narrate_pattern.match(line.strip())
+        narrate_match = narrate_pattern.match(stripped)
         if narrate_match:
             mode = narrate_match.group(1).lower()
             text = narrate_match.group(2) if narrate_match.group(2) else None
@@ -220,29 +268,270 @@ def generate_all_audio(
             raise
 
 
+def extract_type_text(line: str) -> Optional[str]:
+    """Extract the text from a Type command."""
+    match = re.match(r'^Type\s+"([^"]*)"$', line.strip())
+    if match:
+        return match.group(1)
+    match = re.match(r"^Type\s+'([^']*)'$", line.strip())
+    if match:
+        return match.group(1)
+    return None
+
+
+def build_timeline(
+    lines: list[str],
+    config: TapeConfig
+) -> tuple[list[TimelineEvent], list[dict]]:
+    """
+    Build a detailed timeline of all events for analysis.
+    
+    Returns:
+        tuple of (timeline_events, narration_manifest)
+    """
+    timeline = []
+    narration_manifest = []
+    current_time_ms = 0
+    in_hidden = False
+    
+    # Patterns
+    sleep_pattern = re.compile(r'^Sleep\s+(\d+(?:\.\d+)?)(ms|s)?$', re.IGNORECASE)
+    type_pattern = re.compile(r'^Type\s+["\'].*["\']$', re.IGNORECASE)
+    
+    # Build segment lookup
+    segment_by_line = {seg.line_number: seg for seg in config.segments}
+    
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        
+        # Track Hide/Show
+        if stripped == 'Hide':
+            in_hidden = True
+            timeline.append(TimelineEvent(
+                time_ms=current_time_ms,
+                duration_ms=0,
+                event_type='hidden',
+                description='Hide (stop recording)',
+                line_number=i
+            ))
+            continue
+        elif stripped == 'Show':
+            in_hidden = False
+            timeline.append(TimelineEvent(
+                time_ms=current_time_ms,
+                duration_ms=0,
+                event_type='show',
+                description='Show (resume recording)',
+                line_number=i
+            ))
+            continue
+        
+        # Handle narration macros
+        if i in segment_by_line:
+            segment = segment_by_line[i]
+            narration_manifest.append({
+                "file": segment.audio_file,
+                "start_ms": current_time_ms,
+                "duration_ms": segment.duration_ms,
+                "text": segment.text,
+                "mode": segment.mode
+            })
+            timeline.append(TimelineEvent(
+                time_ms=current_time_ms,
+                duration_ms=segment.duration_ms,
+                event_type='narration',
+                description=f'🎙️ "{segment.text[:50]}..."' if len(segment.text) > 50 else f'🎙️ "{segment.text}"',
+                line_number=i
+            ))
+            # For 'before' mode, audio plays then we wait
+            if segment.mode == 'before':
+                current_time_ms += segment.duration_ms
+            continue
+        
+        # Skip other comments and macros
+        if stripped.startswith('#') or stripped.startswith('# @'):
+            continue
+        
+        # Handle Type commands
+        if type_pattern.match(stripped):
+            text = extract_type_text(stripped)
+            if text:
+                char_count = len(text)
+                typing_duration = char_count * config.typing_speed_ms
+                
+                # Check for exec-time hint
+                exec_time = config.exec_time_hints.get(i, 0)
+                
+                event = TimelineEvent(
+                    time_ms=current_time_ms,
+                    duration_ms=typing_duration,
+                    event_type='type',
+                    description=f'⌨️ Type "{text[:40]}..." ({char_count} chars)' if len(text) > 40 else f'⌨️ Type "{text}" ({char_count} chars)',
+                    line_number=i
+                )
+                
+                if exec_time:
+                    event.description += f' [exec: {exec_time}ms]'
+                
+                timeline.append(event)
+                current_time_ms += typing_duration
+            continue
+        
+        # Handle Enter
+        if stripped == 'Enter':
+            exec_time = config.exec_time_hints.get(i, 0)
+            duration = config.enter_delay_ms + exec_time
+            
+            event = TimelineEvent(
+                time_ms=current_time_ms,
+                duration_ms=duration,
+                event_type='enter',
+                description='⏎ Enter',
+                line_number=i
+            )
+            if exec_time:
+                event.description += f' [exec: {exec_time}ms]'
+            
+            timeline.append(event)
+            current_time_ms += duration
+            continue
+        
+        # Handle Sleep commands
+        sleep_match = sleep_pattern.match(stripped)
+        if sleep_match:
+            value = float(sleep_match.group(1))
+            unit = sleep_match.group(2) or 's'
+            if unit.lower() == 's':
+                value *= 1000
+            duration = int(value)
+            
+            timeline.append(TimelineEvent(
+                time_ms=current_time_ms,
+                duration_ms=duration,
+                event_type='sleep',
+                description=f'💤 Sleep {stripped.split()[1]}',
+                line_number=i
+            ))
+            current_time_ms += duration
+            continue
+    
+    return timeline, narration_manifest
+
+
+def analyze_sync_issues(timeline: list[TimelineEvent], narration_manifest: list[dict]) -> list[str]:
+    """Analyze timeline for sync issues between narration and actions."""
+    issues = []
+    
+    # Build a map of narration end times
+    narration_events = [e for e in timeline if e.event_type == 'narration']
+    
+    for i, narr_event in enumerate(narration_events):
+        narr_end_time = narr_event.time_ms + narr_event.duration_ms
+        
+        # Find the next non-narration event
+        next_events = [e for e in timeline 
+                       if e.time_ms >= narr_event.time_ms 
+                       and e.event_type in ('type', 'enter')
+                       and e.line_number > narr_event.line_number]
+        
+        if next_events:
+            next_event = next_events[0]
+            gap = next_event.time_ms - narr_end_time
+            
+            if gap < -500:  # Action starts more than 500ms before narration ends
+                issues.append(
+                    f"⚠️  Line {narr_event.line_number + 1}: Narration ends {-gap}ms AFTER action starts. "
+                    f"Consider using @narrate:during or adding buffer time."
+                )
+            elif gap > 2000:  # More than 2s gap
+                issues.append(
+                    f"💡 Line {narr_event.line_number + 1}: {gap}ms gap between narration and next action. "
+                    f"Consider tightening timing."
+                )
+    
+    return issues
+
+
+def print_timeline(timeline: list[TimelineEvent], narration_manifest: list[dict], config: TapeConfig):
+    """Print a visual timeline for diagnostic purposes."""
+    print("\n📊 Timeline Analysis")
+    print("═" * 80)
+    print(f"\n⚙️  Settings: TypingSpeed={config.typing_speed_ms}ms, EnterDelay={config.enter_delay_ms}ms")
+    if config.exec_time_hints:
+        print(f"   Exec-time hints: {len(config.exec_time_hints)} commands")
+    print()
+    print(f"{'Time':>8}  {'Duration':>8}  {'Event':<60}")
+    print("─" * 80)
+    
+    for event in timeline:
+        time_str = f"{event.time_ms/1000:.2f}s"
+        dur_str = f"{event.duration_ms}ms" if event.duration_ms else ""
+        
+        # Color-code by type
+        type_indicators = {
+            'narration': '🎙️',
+            'type': '⌨️',
+            'enter': '⏎',
+            'sleep': '💤',
+            'hidden': '🙈',
+            'show': '👁️',
+            'exec': '⚡'
+        }
+        
+        print(f"{time_str:>8}  {dur_str:>8}  {event.description:<60}")
+    
+    total_time = timeline[-1].time_ms + timeline[-1].duration_ms if timeline else 0
+    print("─" * 80)
+    print(f"{'Total':>8}  {total_time/1000:.2f}s")
+    
+    # Analyze sync issues
+    issues = analyze_sync_issues(timeline, narration_manifest)
+    if issues:
+        print("\n⚠️  SYNC ISSUES DETECTED:")
+        for issue in issues:
+            print(f"   {issue}")
+    else:
+        print("\n✅ No major sync issues detected.")
+    
+    print()
+
+
 def calculate_timings(
     lines: list[str],
     config: TapeConfig
-) -> tuple[list[str], list[dict]]:
+) -> tuple[list[str], list[dict], list[TimelineEvent]]:
     """
     Calculate real timings and generate compiled tape.
     
+    Now accounts for:
+    - TypingSpeed (per-character delay)
+    - Enter key delay
+    - exec-time hints for command execution
+    
     Returns:
-        tuple of (compiled_lines, audio_manifest)
+        tuple of (compiled_lines, audio_manifest, timeline)
     """
     compiled_lines = []
     audio_manifest = []
     current_time_ms = 0
     
+    # Build timeline first for analysis
+    timeline, _ = build_timeline(lines, config)
+    
     # Track which segments we've processed
     segment_idx = 0
     pending_during = None  # Track 'during' narration
     
-    # Pattern to detect Sleep commands and extract time
+    # Patterns
     sleep_pattern = re.compile(r'^Sleep\s+(\d+(?:\.\d+)?)(ms|s)?$', re.IGNORECASE)
+    type_pattern = re.compile(r'^Type\s+["\'].*["\']$', re.IGNORECASE)
     
     for i, line in enumerate(lines):
         stripped = line.strip()
+        
+        # Skip exec-time hints (they're already processed)
+        if stripped.startswith('# @exec-time'):
+            continue
         
         # Skip narration macro comments (they become timing)
         if stripped.startswith('# @narrate:') or stripped.startswith('# @voice'):
@@ -304,19 +593,35 @@ def calculate_timings(
                             pending_during = None
             continue
         
+        # Handle Type commands - account for typing time
+        if type_pattern.match(stripped):
+            text = extract_type_text(stripped)
+            if text:
+                typing_duration = len(text) * config.typing_speed_ms
+                current_time_ms += typing_duration
+            compiled_lines.append(line)
+            continue
+        
+        # Handle Enter - account for enter delay and exec-time
+        if stripped == 'Enter':
+            exec_time = config.exec_time_hints.get(i, 0)
+            current_time_ms += config.enter_delay_ms + exec_time
+            compiled_lines.append(line)
+            continue
+        
         # Handle Sleep commands - track time
         sleep_match = sleep_pattern.match(stripped)
         if sleep_match:
             value = float(sleep_match.group(1))
             unit = sleep_match.group(2) or 's'
-            if unit == 's':
+            if unit.lower() == 's':
                 value *= 1000
             current_time_ms += int(value)
         
         # Pass through other lines
         compiled_lines.append(line)
     
-    return compiled_lines, audio_manifest
+    return compiled_lines, audio_manifest, timeline
 
 
 def split_caption_text(text: str, max_chars_per_line: int = 42, max_lines: int = 2) -> list[str]:
@@ -528,12 +833,14 @@ def main():
                         help="Also run FFmpeg to create final video with audio")
     parser.add_argument("--dry-run", "-n", action="store_true",
                         help="Parse and show plan without generating audio")
+    parser.add_argument("--timeline", "-t", action="store_true",
+                        help="Show detailed timeline analysis (no audio generation)")
     
     args = parser.parse_args()
     
-    # Check for API key
+    # Check for API key (not needed for timeline or dry-run)
     api_key = os.environ.get("ELEVENLABS_API_KEY")
-    if not api_key and not args.dry_run:
+    if not api_key and not args.dry_run and not args.timeline:
         print("Error: ELEVENLABS_API_KEY environment variable required", file=sys.stderr)
         sys.exit(1)
     
@@ -550,11 +857,27 @@ def main():
             config.voice_id = args.voice
     
     print(f"   Voice: {config.voice} ({config.voice_id})")
+    print(f"   TypingSpeed: {config.typing_speed_ms}ms per character")
+    if config.exec_time_hints:
+        print(f"   Exec-time hints: {len(config.exec_time_hints)} commands")
     print(f"   Found {len(config.segments)} narration segments:")
     
     for seg in config.segments:
         text_preview = (seg.text[:40] + "...") if seg.text and len(seg.text) > 40 else seg.text
         print(f"     - @narrate:{seg.mode} \"{text_preview}\"")
+    
+    # Timeline analysis mode
+    if args.timeline:
+        # For timeline, we need estimated durations - use placeholder values
+        for i, seg in enumerate(config.segments):
+            if seg.text:
+                # Estimate ~150ms per word for speech
+                word_count = len(seg.text.split())
+                seg.duration_ms = max(1000, word_count * 150)
+        
+        timeline, narration_manifest = build_timeline(lines, config)
+        print_timeline(timeline, narration_manifest, config)
+        return
     
     if args.dry_run:
         print("\n🔍 Dry run - no audio generated")
@@ -569,7 +892,10 @@ def main():
     
     # Calculate timings and compile tape
     print(f"\n⏱️  Calculating timings...")
-    compiled_lines, audio_manifest = calculate_timings(lines, config)
+    compiled_lines, audio_manifest, timeline = calculate_timings(lines, config)
+    
+    # Show timeline analysis
+    print_timeline(timeline, audio_manifest, config)
     
     # Write compiled tape
     compiled_tape_path = args.output_dir / f"{args.tape_file.stem}_compiled.tape"
