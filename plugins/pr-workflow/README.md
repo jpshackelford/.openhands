@@ -168,6 +168,81 @@ Do not treat the orchestrator enabler as a replacement for CI or PR review. It
 is intentionally a small workflow that toggles the automation back on; it does
 not test code and it does not review PRs.
 
+#### Project CI workflow
+
+Your repository needs a CI workflow (e.g., `.github/workflows/tests.yml`) that runs on pull requests. The orchestrator waits for this workflow to produce a green (passing) or red (failing) signal before proceeding with testing and merge decisions.
+
+This workflow should:
+- Run on `pull_request` events
+- Install dependencies and run your project's test suite
+- Run linters, type checkers, and any other code quality checks
+- Report status back to GitHub (this happens automatically)
+
+The specific implementation depends on your project (Python with pytest, Node with Jest, Go with go test, etc.), but the key requirement is that it provides a clear pass/fail signal that the orchestrator can observe via the GitHub API.
+
+Example triggers:
+```yaml
+on:
+  pull_request:
+  push:
+    branches: [main]
+```
+
+#### Orchestrator enabler workflow
+
+This workflow "wakes up" the orchestrator automation when new issues or PRs are created. When the orchestrator auto-disables itself after consecutive quiet periods, this workflow re-enables it so work can resume.
+
+Create `.github/workflows/enable-orchestrator.yml`:
+
+```yaml
+name: Enable Orchestrator on New Issue or PR
+
+on:
+  issues:
+    types: [opened]
+  pull_request:
+    types: [opened, ready_for_review, reopened]
+  workflow_dispatch:
+
+jobs:
+  enable-orchestrator:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check and enable orchestrator if disabled
+        env:
+          OPENHANDS_API_KEY: ${{ secrets.OPENHANDS_API_KEY }}
+          AUTOMATION_ID: "your-automation-uuid-here"
+        run: |
+          set -euo pipefail
+
+          STATUS=$(curl -sf \
+            -H "Authorization: Bearer $OPENHANDS_API_KEY" \
+            "https://app.all-hands.dev/api/automation/v1/$AUTOMATION_ID" | jq -r '.enabled') || {
+            echo "Error: Failed to read orchestrator status from automation API."
+            exit 1
+          }
+
+          if [ "$STATUS" = "false" ]; then
+            echo "Orchestrator is disabled. Enabling..."
+            curl -sf -X PATCH \
+              -H "Authorization: Bearer $OPENHANDS_API_KEY" \
+              -H "Content-Type: application/json" \
+              -d '{"enabled": true}' \
+              "https://app.all-hands.dev/api/automation/v1/$AUTOMATION_ID" > /dev/null
+            echo "Orchestrator enabled!"
+          elif [ "$STATUS" = "true" ]; then
+            echo "Orchestrator already enabled. Nothing to do."
+          else
+            echo "Error: Unexpected status from automation API: '$STATUS'"
+            exit 1
+          fi
+```
+
+Required setup for this workflow:
+- Replace `your-automation-uuid-here` with your actual automation ID (from step 3 below)
+- `OPENHANDS_API_KEY` must be available as a repository or organization Actions secret
+- This workflow runs on issue open, PR open/ready/reopen, or manual trigger
+
 #### PR review workflow
 
 If `orchestration.md` says `Self-review: disabled`, install an external review
