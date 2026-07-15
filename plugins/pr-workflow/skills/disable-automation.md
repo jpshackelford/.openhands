@@ -17,10 +17,12 @@ Disable this orchestrator's automation in OpenHands Cloud without deleting it. T
 
 ## When to Use
 
-The orchestrator should disable itself when it detects **two consecutive "quiet" entries** in WORKLOG.md, indicating:
-- No new work has appeared for multiple check cycles
-- All PRs are merged or waiting for external input
-- The project has reached a natural pause point
+The orchestrator should disable itself when it detects **two consecutive unproductive entries** in WORKLOG.md — that is, cycles that are either **quiet** or **idle**:
+
+- **Quiet** — no new work has appeared: all PRs are merged or absent, no ready issues, no expansion candidates, and the project has reached a natural pause point.
+- **Idle** — an in-scope PR/issue exists but its only blocker is a **non-actionable, already-escalated gate** (a human has been asked to act, or a required automated check fails identically regardless of PR content) **and there has been no new repo activity since the escalation** (head SHA unchanged; no new commits, comments, or reviews). See the orchestrate skill's [Escalated, Non-Actionable Gate](orchestrate.md#anti-stall-an-escalated-non-actionable-gate-is-not-an-excuse-to-spin-forever) section.
+
+Both mean the orchestrator has no move that changes the outcome, so continuing to wake every cycle only reposts the same entry. A normal, still-actionable `⏳ **Waiting for Review**` (review just triggered, author mid-push, worker running, CI in progress) is **not** unproductive and must not count.
 
 ## Automation ID
 
@@ -81,21 +83,29 @@ false
 
 ## Detection Logic
 
-The orchestrator should check WORKLOG.md for consecutive quiet entries:
+The orchestrator should check WORKLOG.md for two consecutive **unproductive** entries — quiet (`All quiet`) or idle (`— idle`):
 
 ```bash
 # Get the last 2 orchestrator entries from WORKLOG.md
-tail -100 WORKLOG.md | grep -E "^### [0-9]{4}-[0-9]{2}-[0-9]{2}.*Orchestrator$|All quiet" | tail -4
+tail -100 WORKLOG.md | grep -E "^### [0-9]{4}-[0-9]{2}-[0-9]{2}.*Orchestrator$|All quiet|— idle" | tail -4
 ```
 
-If the output shows TWO consecutive entries that both contain "All quiet", then disable:
+If the output shows TWO consecutive entries that are each quiet or idle, then disable.
 
-Example pattern to detect:
+Example pattern to detect (both quiet):
 ```
 ### 2025-05-05 10:30 UTC - Orchestrator
 ✅ **All quiet** - No action needed
 ### 2025-05-05 11:00 UTC - Orchestrator  
 ✅ **All quiet** - No action needed
+```
+
+Example pattern to detect (both idle — a PR is stuck on an escalated, non-actionable gate with no new activity):
+```
+### 2025-05-05 10:30 UTC - Orchestrator
+⏳ **Waiting for Review** — idle (escalated 10:04, head unchanged)
+### 2025-05-05 11:00 UTC - Orchestrator
+⏳ **Waiting for Review** — idle (still blocked, no new commits/reviews)
 ```
 
 ## WORKLOG Entry When Disabling

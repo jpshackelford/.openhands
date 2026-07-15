@@ -398,6 +398,53 @@ After triggering review, write `⏳ **Waiting for Review**` to `WORKLOG.md`. Do 
 
 Only use `✅ **All quiet**` when there are no open actionable PRs, no ready issues, and no expansion candidates. Use `⏳ **Waiting for Review**` or another waiting status when work exists but a real gate is pending.
 
+### Anti-Stall: An Escalated, Non-Actionable Gate Is Not an Excuse to Spin Forever
+
+`⏳ **Waiting for Review**` (and any other waiting status) means _"a real gate is
+pending and the orchestrator has a next action that can advance it"_ — trigger a
+review, poll a running worker, wait one tick for an author who is mid-push, etc.
+It is **not** a licence to wake up every cycle indefinitely and re-post an
+identical entry when there is nothing left for the orchestrator to do.
+
+A gate is **non-actionable** when the orchestrator has exhausted its moves and
+the only remaining actor is a human or an upstream fix. The two common cases:
+
+1. **Escalated to a human.** The orchestrator has already posted a one-time
+   escalation (e.g. requesting a manual review or an upstream fix) and correctly
+   stopped retrying to avoid noise.
+2. **Known-broken automated gate.** A required check fails **identically and
+   content-independently** on every attempt (e.g. an external review action that
+   errors with a dependency/import failure regardless of the PR), so re-triggering
+   it cannot converge.
+
+Once a gate is non-actionable, define the cycle as **idle** when _both_ hold:
+
+- The gate is still non-actionable (human has not acted; upstream not fixed), **and**
+- there has been **no new repo activity** since the escalation — the PR head SHA
+  is unchanged and there are no new commits, pushes, comments, or reviews on the
+  in-scope PR(s)/issue(s).
+
+An idle cycle is functionally quiet for auto-disable purposes: the orchestrator
+has no productive move, and continuing to wake merely reposts the same waiting
+entry. **Idle cycles count toward auto-disable exactly like `✅ **All quiet**`
+cycles** (see [Auto-Disable](#auto-disable-on-consecutive-quiet-periods)). Log the
+cycle with `⏳ **Waiting for Review**` (or the appropriate waiting status) and the
+literal marker `— idle` in the action line so the auto-disable check can count it,
+e.g. `⏳ **Waiting for Review** — idle (escalated 20:04, head unchanged)`. Disabling
+here is safe and correct: a human has already been notified, and any new commit,
+comment, review, or `## INSTRUCTION:` naturally re-establishes actionable work
+(and the human re-enables the automation, or the next real event does).
+
+**Do not mark a cycle idle** — keep it as a normal, non-counting waiting cycle —
+when any of these is true, because the orchestrator still has a move or new work
+has arrived:
+
+- The head SHA changed since the last tick, or there are new commits/comments/reviews
+  (an author or reviewer is actively engaging → real progress, re-test/re-route).
+- A review was just triggered this cycle and no run has resolved yet (give it a tick).
+- A worker is still running (`!CAN_SPAWN_PR_WORKER`), or CI is still in progress.
+- The gate has not yet been escalated — escalate first, then it may become idle.
+
 ### Anti-Stall: Drafts Must Not Stall the PR Slot
 
 A draft PR is **not** a quiet/parked state, and the `isDraft` flag alone is never
@@ -962,7 +1009,8 @@ Testing [PR #42](https://github.com/{REPOSITORY}/pull/42): {title}
 | Spawned implementation | `🛠 **Launched: Implementation Worker**` |
 | Spawned 2 workers in parallel | `🚀 **Launched: 2 workers in parallel**` (list both under one bullet group; add a row in **Active Workers** for _each_ worker so the next wake-up can poll both conv IDs) |
 | PR worker still running, slot busy | `⏳ **PR slot busy**` (1 bullet pointing at the conversation) |
-| Ready PR has no first review yet and review was requested/triggered | `⏳ **Waiting for Review**` (not quiet; do not count toward auto-disable) |
+| Ready PR has no first review yet and review was requested/triggered | `⏳ **Waiting for Review**` (not quiet; does not count toward auto-disable **while actionable**) |
+| Ready PR blocked only by an escalated, non-actionable gate, no new repo activity since escalation | `⏳ **Waiting for Review** — idle` (counts toward auto-disable; see [Escalated, Non-Actionable Gate](#anti-stall-an-escalated-non-actionable-gate-is-not-an-excuse-to-spin-forever)) |
 | Nothing to do this cycle | `✅ **All quiet**` (only when no actionable PRs/issues remain) |
 | Auto-disabled after 2 quiet cycles | `🔒 **Auto-disabled due to inactivity**` — see `disable-automation` skill |
 | Acting on a human `## INSTRUCTION:` | `📋 **Following Human Instructions**` (1 bullet stating what was done) |
@@ -973,24 +1021,33 @@ A worker that completes can append its own short closing entry in the same shape
 
 ## Auto-Disable on Consecutive Quiet Periods
 
-Before logging an "All quiet" entry, first apply the anti-stall rule above: confirm there are no actionable PRs/issues and no pending review trigger to request. `Waiting for Review`, `PR slot busy`, configuration errors, and other real gates are not quiet and must not count toward auto-disable.
+Before logging an "All quiet" entry, first apply the anti-stall rule above: confirm there are no actionable PRs/issues and no pending review trigger to request. `Waiting for Review`, `PR slot busy`, configuration errors, and other real gates are not quiet **while the orchestrator still has a move that can advance them**, and while they are actionable they must not count toward auto-disable.
 
-After confirming the current tick is truly quiet, check whether the previous orchestrator entry was also "All quiet". If yes, this would be the second consecutive quiet cycle → disable the automation instead of logging another quiet entry.
+A cycle counts toward auto-disable when it is either:
+
+- **Quiet** — no open actionable PRs, no ready issues, no expansion candidates (`✅ **All quiet**`); or
+- **Idle** — an in-scope PR/issue exists but its only blocker is a **non-actionable, already-escalated gate** and there has been **no new repo activity since the escalation** (see [An Escalated, Non-Actionable Gate Is Not an Excuse to Spin Forever](#anti-stall-an-escalated-non-actionable-gate-is-not-an-excuse-to-spin-forever)). Idle cycles carry the literal `— idle` marker in their action line.
+
+Both are "unproductive": the orchestrator has no move that changes the outcome, so repeating them just adds noise. After confirming the current tick is quiet-or-idle, check whether the previous orchestrator entry was also quiet-or-idle. If yes, this is the second consecutive unproductive cycle → disable the automation instead of logging another one.
 
 ```bash
-# Of the last 2 orchestrator entries, how many were quiet?
-# Each entry contributes 1-2 matching lines: 1 header (`### … Orchestrator`)
-# plus 1 body line if the entry contains "All quiet". So the last 4 matching
-# lines cover the last 2 entries; if 2 of those 4 are "All quiet" body lines,
-# both of the last 2 entries were quiet → second consecutive quiet → disable.
-LAST=$(grep -E "(^### .*Orchestrator|All quiet)" WORKLOG.md | tail -4)
-QUIET_COUNT=$(echo "$LAST" | grep -c "All quiet")
-if [ "$QUIET_COUNT" -ge 2 ]; then
-  # Both of the last 2 entries were quiet → invoke /disable-automation,
-  # log a 🔒 entry, exit.
+# Of the last 2 orchestrator entries, how many were unproductive
+# (quiet OR idle)? Each entry contributes 1 header line (`### … Orchestrator`)
+# plus 1 body line if it contains "All quiet" or the "— idle" marker. So the
+# last 4 matching lines cover the last 2 entries; if 2 of those 4 are
+# unproductive body lines, both of the last 2 entries were unproductive →
+# second consecutive → disable.
+LAST=$(grep -E "(^### .*Orchestrator|All quiet|— idle)" WORKLOG.md | tail -4)
+UNPRODUCTIVE_COUNT=$(echo "$LAST" | grep -cE "All quiet|— idle")
+if [ "$UNPRODUCTIVE_COUNT" -ge 2 ]; then
+  # Both of the last 2 entries were quiet or idle → invoke /disable-automation,
+  # log a 🔒 entry, exit. (The human escalation from the idle gate stands; the
+  # next real repo event or the human re-enables the automation.)
   :
 fi
 ```
+
+The escalation posted when a gate first became non-actionable is what keeps this safe: by the time idle cycles accumulate, a human has already been asked to act, so disabling stops the busy-wait without dropping the request on the floor.
 
 The disable curl, the automation ID, the WORKLOG entry shape, and the re-enable instructions all live in [`disable-automation.md`](disable-automation.md). The orchestrator just decides _when_ to disable; it does not embed the API call inline in this skill, and it does not repeat re-enable instructions into every disable entry.
 
