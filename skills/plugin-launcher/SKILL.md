@@ -95,9 +95,72 @@ interface PluginSpec {
   source: string;       // Source: 'github:owner/repo' or git URL
   ref?: string | null;  // Optional branch, tag, or commit
   repo_path?: string;   // Subdirectory path (e.g., 'skills/github' or 'plugins/pr-review')
-  parameters?: Record<string, unknown>; // User-provided configuration
+  parameters?: Record<string, unknown>; // User-provided configuration (see below)
 }
 ```
+
+## Plugin Parameters
+
+Plugins can define configurable parameters in `.claude-plugin/plugin.json`. When included in a launch URL, these parameters appear as editable form fields in the launch modal.
+
+### Parameter Definition Format (in plugin.json)
+
+```json
+{
+  "name": "my-plugin",
+  "parameters": {
+    "repo_url": {
+      "type": "string",
+      "description": "GitHub repository URL",
+      "required": true
+    },
+    "review_depth": {
+      "type": "string",
+      "description": "How thorough the review should be",
+      "default": "standard"
+    },
+    "include_tests": {
+      "type": "boolean",
+      "default": true
+    },
+    "max_files": {
+      "type": "number",
+      "default": 10
+    }
+  }
+}
+```
+
+### Including Parameters in Launch URL
+
+Parameters are passed in the `parameters` field of the PluginSpec:
+
+```python
+plugins = [{
+    "source": "github:owner/repo",
+    "ref": "main",
+    "repo_path": "plugins/my-plugin",
+    "parameters": {
+        "repo_url": "",           # Empty string = empty input field for user to fill
+        "review_depth": "thorough",  # Pre-filled value
+        "include_tests": True,
+        "max_files": 20
+    }
+}]
+```
+
+### Empty vs Pre-filled Parameters
+
+| Value in URL | UI Behavior |
+|--------------|-------------|
+| `""` (empty string) | Empty text input field |
+| `null` | Empty text input field |
+| `"value"` | Pre-filled text input |
+| `0` | Number input showing 0 |
+| `false` | Unchecked checkbox |
+| `true` | Checked checkbox |
+
+**Tip:** Use empty strings for required parameters to show an empty field that users must fill in.
 
 ## Generating Launch URLs and Badges
 
