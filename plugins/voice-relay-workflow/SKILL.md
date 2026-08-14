@@ -90,6 +90,29 @@ Before any worker writes an auto-close trailer for issue N into a PR body — **
 | Review (`/address-review`) | After each review round | Review feedback can flip the gate verdict in either direction |
 | Merge (`/prepare-merge`) | Final hard gate before squashing | Last line of defense — block the merge if the gate fails |
 
+### Idempotence (no duplicate follow-ups)
+
+The gate is run **multiple times against the same PR** by design — the implementation worker's pre-ready and re-run AC Gate checkpoints, every review round, and the merge worker's hard gate. It can also run concurrently (e.g. a retroactive `## INSTRUCTION:` block and a normal forward tick on the same PR in parallel — the failure mode that produced duplicates [#414–#418](https://github.com/jpshackelford/voice-relay/issues/414) on 2026-06-06).
+
+Before filing any follow-up issue, a worker MUST enumerate the existing follow-up set and reuse it:
+
+1. **Read the PR body's `## Deferred to follow-ups` section** — these are follow-ups recorded by an earlier gate run on this PR. Each is canonical.
+2. **Search by title pattern** for follow-ups filed by parallel runs that have not yet updated the PR body:
+   ```bash
+   gh issue list --repo <repo> --state all \
+     --search 'in:title "follow-up to #<umbrella>"'
+   ```
+3. **Union** of (1) and (2) is the **existing follow-up set**.
+
+When walking the AC checklist:
+
+- For each uncovered AC item: first check whether an issue in the existing set already covers that item (read its body). If yes, **reuse** — do not file a new one.
+- For each previously-filed follow-up whose AC item is now satisfied by the current diff: leave a comment on it noting the gap was closed in this PR, and remove its number from the body's `## Deferred to follow-ups` section. Do **not** auto-close — let the next normal triage tick decide whether the issue is truly superseded or merits a separate close.
+
+When walking finishes, the PR body's `## Deferred to follow-ups` section must list exactly the union of (a) existing follow-ups that still cover an uncovered AC, plus (b) any new follow-ups filed in this run.
+
+The per-worker skill files carry the concrete pre-flight commands at the top of each AC-gate section: see `implement-issue.md` → **AC Gate (pre-ready)**, `address-review.md` → **Re-run AC Gate (REQUIRED)**, and `prepare-and-merge.md` → **AC Gate (pre-merge)**. The merge worker's gate uses the pre-flight to **verify** the existing set matches the gap analysis — a discrepancy is a gate failure (drop back to draft, do not merge with an inconsistent body).
+
 ### Override
 
 The gate may be overridden only by an open `## INSTRUCTION:` block in `WORKLOG.md` (on `main` of the target repo) that explicitly names the PR number, the issue number, and the AC items being waived. The override must be recorded in the cycle's WORKLOG entry and (for merge) in the squash commit body.
