@@ -333,6 +333,51 @@ Create an automation in OpenHands Cloud that uses this plugin:
 
 ## How It Works
 
+### The Circle of Work
+
+```mermaid
+flowchart LR
+    subgraph Orch["🎯 Orchestrator (cron)"]
+        direction TB
+        wake["Wake"]
+        check["Check State"]
+        decide["Decide"]
+        spawn["Spawn"]
+        log["Log & Exit"]
+        wake --> check --> decide --> spawn --> log
+        log -.->|"cron"| wake
+    end
+
+    subgraph IssueWorkers["📋 Issue Workers"]
+        direction TB
+        exp["Expansion"]
+        pri["Prioritization"]
+    end
+
+    subgraph PRWorkers["🔧 PR Workers"]
+        direction TB
+        imp["Implementation"]
+        doc["Documentation*"]
+        tst["Testing*"]
+        rev["Review"]
+        mrg["Merge"]
+    end
+
+    Orch --> IssueWorkers --> PRWorkers
+
+    spawn -.-> exp
+    spawn -.-> pri
+    spawn -.-> imp
+    spawn -.-> doc
+    spawn -.-> tst
+    spawn -.-> rev
+    spawn -.-> mrg
+```
+
+The orchestrator wakes on its configured cron schedule, checks GitHub state, and spawns the appropriate worker(s). Each worker runs in its own OpenHands conversation and exits when done — the orchestrator never waits for a worker, so the next tick notices when something finished. Worker types marked `*` (documentation, testing) are enabled per project through the `Phases` section of `.agents/resources/orchestration.md`.
+
+### Orchestrator wake-up
+
 ```
 ┌──────────────────────────────────────────────────────────────────┐
 │  ORCHESTRATOR WAKE-UP                                            │
