@@ -348,25 +348,26 @@ flowchart LR
         log -.->|"cron"| wake
     end
 
-    subgraph IssueWorkers["📋 Issue Workers"]
+    subgraph Slot1["📋 Slot 1 — Issue Worker (0 or 1)"]
         direction TB
         exp["Expansion"]
-        pri["Prioritization"]
+        pri["Prioritization (inline)"]
     end
 
-    subgraph PRWorkers["🔧 PR Workers"]
+    subgraph Slot2["🔧 Slot 2 — PR Worker (0 or 1, serialized)"]
         direction TB
         imp["Implementation"]
         doc["Documentation*"]
         tst["Testing*"]
         rev["Review"]
         mrg["Merge"]
+        imp --> doc --> tst --> rev --> mrg
     end
 
-    Orch --> IssueWorkers --> PRWorkers
+    Orch --> Slot1
+    Orch --> Slot2
 
     spawn -.-> exp
-    spawn -.-> pri
     spawn -.-> imp
     spawn -.-> doc
     spawn -.-> tst
@@ -374,7 +375,7 @@ flowchart LR
     spawn -.-> mrg
 ```
 
-The orchestrator wakes on its configured cron schedule, checks GitHub state, and spawns the appropriate worker(s). Each worker runs in its own OpenHands conversation and exits when done — the orchestrator never waits for a worker, so the next tick notices when something finished. Worker types marked `*` (documentation, testing) are enabled per project through the `Phases` section of `.agents/resources/orchestration.md`.
+The orchestrator wakes on its configured cron schedule, checks GitHub state, and spawns the appropriate worker(s). It runs a fixed **two-slot** model: one **Issue (Expansion)** slot and one **PR** slot can be active at the same time, but never two of either. Work inside the PR slot is **serialized** (Implementation → Documentation → Testing → Review → Merge). Prioritization runs **inline** via `/assess-priority` rather than as its own spawned worker. Each worker runs in its own OpenHands conversation and exits when done — the orchestrator never waits for a worker, so the next tick notices when something finished. Stages marked `*` (documentation, testing) are enabled per project through the `Phases` section of `.agents/resources/orchestration.md`.
 
 ### Orchestrator wake-up
 
