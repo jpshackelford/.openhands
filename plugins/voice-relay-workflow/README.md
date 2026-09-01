@@ -97,6 +97,28 @@ flowchart LR
 
 > The **Closing-Trailer AC Gate** runs at three checkpoints — pre-ready (implementation worker), after each review round (review worker), and as a hard pre-merge gate (merge worker). If any non-exempt acceptance criterion is uncovered by the diff, the trailer becomes `Refs #N` + filed follow-up issues, never silently `Fixes #N`. See `SKILL.md` for the full rule.
 
+### Post-deploy CI Failures
+
+```mermaid
+flowchart LR
+    A((Smoke test fails<br/>after deploy)) -->|"auto-file"| B[ci-failure issue]
+    B -->|"orchestrator dispatch<br/>(preempts feature work)"| C[fix-ci-failure worker]
+    C -->|"increment ci-fix-attempts:N"| D{Classify failure}
+    D -->|"real regression"| E[Forward-fix or<br/>revert PR]
+    D -->|"flaky test"| F[label flaky-test<br/>+ deflake tracker]
+    D -->|"test infra"| G[chore(ci): PR or<br/>needs-human]
+    D -->|"deferred dep"| H[temp disable PR<br/>or revert]
+    E --> I[Normal PR lifecycle<br/>with AC gate]
+    F --> J((Exit))
+    G --> J
+    H --> I
+    I --> J
+    J -.->|"attempts < 3"| C
+    J -.->|"attempts = 3"| K[Add needs-human<br/>+ remove ci-failure]
+```
+
+> CI failures preempt normal feature dispatch — production needs to be unblocked before more changes pile on. The `fix-ci-failure` worker (`/fix-ci-failure`) gets up to **3 attempts** to fix forward or revert; after that it escalates by adding `needs-human` and removing `ci-failure`, so the orchestrator stops re-dispatching and a human takes the wheel.
+
 ## Key Principles
 
 | Principle | What it means in practice |
@@ -147,6 +169,11 @@ The orchestrator reads these blocks at the top of every tick and follows them be
 | [PR Workflow Status](skills/pr-workflow-status.md) | `/pr-workflow-status` | Read PR state using `lxa` + `gh` |
 | [Prepare and Merge](skills/prepare-and-merge.md) | `/prepare-merge` | Final merge — hard AC gate, squash, linked-issue handling |
 | [Update Project Plan](skills/update-project-plan.md) | `/update-plan` | Post-merge reflection + project-doc updates |
+
+### CI Failure Recovery
+| Skill | Trigger | Purpose |
+|-------|---------|---------|
+| [Fix CI Failure](skills/fix-ci-failure.md) | `/fix-ci-failure` | Triage smoke-test / post-deploy failures; open forward-fix or revert PR; escalate to `needs-human` after 3 attempts |
 
 ### Housekeeping
 | Skill | Trigger | Purpose |

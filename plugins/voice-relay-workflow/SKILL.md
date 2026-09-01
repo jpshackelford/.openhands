@@ -198,6 +198,12 @@ lxa pr list "jpshackelford/voice-relay#<PR_NUMBER>"
 | [Update Project Plan](skills/update-project-plan.md) | `/update-plan` | Reflect and update docs |
 | [Prepare and Merge](skills/prepare-and-merge.md) | `/prepare-merge` | Final merge workflow (hard AC gate, squash, manual close) |
 
+### CI Failure Recovery
+
+| Skill | Trigger | Purpose |
+|-------|---------|---------|
+| [Fix CI Failure](skills/fix-ci-failure.md) | `/fix-ci-failure` | Diagnose + forward-fix or revert CI failures (smoke tests, deploy regressions). Escalates to `needs-human` after 3 failed attempts. |
+
 ### Automation Management
 
 | Skill | Trigger | Purpose |
@@ -212,10 +218,14 @@ lxa pr list "jpshackelford/voice-relay#<PR_NUMBER>"
 | `needs-info` | Cannot proceed without more info from reporter |
 | `needs-split` | Issue too large, should be broken into smaller issues |
 | `blocked` | Blocked by external factors |
+| `needs-human` | Stop dispatching; a human must engage before the orchestrator works on this again |
 | `priority:critical` | Blocking/urgent - do immediately |
 | `priority:high` | Important - do soon |
 | `priority:medium` | Standard priority |
 | `priority:low` | Nice to have |
+| `ci-failure` | Auto-filed when a smoke-test / post-deploy check fails. Routed to `/fix-ci-failure` by the orchestrator decision table. |
+| `ci-fix-attempts:1` / `:2` / `:3` | Counter incremented by `/fix-ci-failure` on each attempt. At `:3` the worker adds `needs-human` and removes `ci-failure`. |
+| `flaky-test` | Set by `/fix-ci-failure` when reruns of the same commit alternate pass/fail; partner with a tracking issue for deflaking. |
 
 ## Auto-Disable Behavior
 
@@ -258,6 +268,16 @@ When merge criteria met (good rating, or 3x acceptable, or acceptable+spurious):
 - Crafts conventional commit message (records gate verdict in body)
 - Squash-merges
 - Linked-issue handling depends on the gate verdict: `Fixes/Closes/Resolves #N` lets GitHub auto-close N; `Refs/Part-of #N` leaves N open while follow-ups drain
+
+### Phase 4 (preemptive): CI Failure Recovery (`/fix-ci-failure`)
+A post-merge smoke-test / deploy check that fails files a `ci-failure` issue (often with auto-rollback already initiated). The orchestrator decision table routes such issues to the implementation slot as **higher priority than normal feature work** — production needs to be unblocked before more changes pile on top.
+
+A `fix-ci-failure` worker:
+- Reads the issue's failed-commit SHA + workflow-run URL + rollback target
+- Classifies: real regression / flaky / test infra / deferred-work dependency
+- Either opens a forward-fix PR (which then runs the normal Phase 1–3 lifecycle), or opens a revert PR, or labels `flaky-test` + files a deflaking tracker
+- Increments `ci-fix-attempts:N` on the issue
+- At `N = 3`, escalates: adds `needs-human`, removes `ci-failure`, posts a summary of all three attempts
 
 ## Merge Criteria
 
