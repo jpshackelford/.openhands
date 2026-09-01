@@ -161,6 +161,40 @@ gh pr diff $(gh pr view --json number -q .number) --repo jpshackelford/voice-rel
 
 ### AC Gate (pre-ready)
 
+**Pre-flight: enumerate existing follow-ups (idempotence).** Before walking the AC checklist, enumerate any follow-ups that already exist for issue {issue_number}. This makes the gate **idempotent** — re-running it (in **AC Gate (re-run after CI)** below, in any review round, or in the merge worker's hard gate) must not duplicate issues filed by a previous run, and must not duplicate issues filed by a concurrent retroactive run. See `SKILL.md` → "Idempotence (no duplicate follow-ups)" for the rule.
+
+```bash
+PR_NUMBER=$(gh pr view --json number -q .number)
+
+# (a) Follow-ups already recorded in this PR's body
+gh pr view "$PR_NUMBER" --repo jpshackelford/voice-relay --json body -q '.body' \
+  | awk '/^## Deferred to follow-ups/{flag=1; next} /^## /{flag=0} flag && /#[0-9]+/' \
+  | grep -oE '#[0-9]+' | sort -u > /tmp/existing-in-body.txt
+
+# (b) Follow-ups filed by parallel runs against the same umbrella issue
+gh issue list --repo jpshackelford/voice-relay --state all \
+  --search "in:title \"follow-up to #{issue_number}\"" \
+  --json number -q '.[].number' | sed 's/^/#/' | sort -u > /tmp/existing-by-title.txt
+
+# Union = the existing follow-up set
+sort -u /tmp/existing-in-body.txt /tmp/existing-by-title.txt > /tmp/existing-followups.txt
+cat /tmp/existing-followups.txt
+```
+
+For each issue in the existing set, read its body so you know which AC item(s) it covers:
+
+```bash
+while read -r ref; do
+  num=${ref#\#}
+  echo "=== $ref ==="
+  gh issue view "$num" --repo jpshackelford/voice-relay --json title,body \
+    -q '.title + "\n---\n" + (.body | .[0:600])'
+  echo ""
+done < /tmp/existing-followups.txt
+```
+
+You now have the **existing follow-up set**. Use it in the fail-path below: reuse before filing.
+
 Run the gate now — this is the **first** of two checkpoints (the second is **AC Gate (re-run after CI)** below).
 
 For issue {issue_number}, walk the `## Acceptance Criteria` checklist item-by-item against the final diff from **Final diff review**:
