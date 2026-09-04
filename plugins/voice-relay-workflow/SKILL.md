@@ -221,11 +221,11 @@ lxa pr list "jpshackelford/voice-relay#<PR_NUMBER>"
 
 The orchestrator automatically disables itself when it detects **two consecutive "quiet" entries** in WORKLOG.md (indicating no new work to pick up). This prevents unnecessary automation runs when the project is at a natural pause point or all issues are closed.
 
-**Automation ID:** `a0219382-2e7c-4156-9991-7b9976739a66`
+**Automation ID:** `320e5e99-f9c0-4159-84fc-490724a67e97`
 
 To re-enable after auto-disable:
 - **UI:** https://app.all-hands.dev/automations → Toggle "Voice Relay Workflow Orchestrator"
-- **API:** `curl -X PATCH ".../api/automation/v1/a0219382-2e7c-4156-9991-7b9976739a66" -d '{"enabled": true}'`
+- **API:** `curl -X PATCH ".../api/automation/v1/320e5e99-f9c0-4159-84fc-490724a67e97" -d '{"enabled": true}'`
 
 ## Workflow Phases
 

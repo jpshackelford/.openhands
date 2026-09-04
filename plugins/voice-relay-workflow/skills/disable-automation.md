@@ -26,7 +26,7 @@ The orchestrator should disable itself when it detects **two consecutive "quiet"
 
 **CRITICAL:** This automation's ID is:
 ```
-a0219382-2e7c-4156-9991-7b9976739a66
+320e5e99-f9c0-4159-84fc-490724a67e97
 ```
 
 This ID identifies the "Voice Relay Workflow Orchestrator" automation in OpenHands Cloud. Use this exact ID when making the disable API call.
@@ -36,7 +36,7 @@ This ID identifies the "Voice Relay Workflow Orchestrator" automation in OpenHan
 Make a PATCH request to the OpenHands automation API:
 
 ```bash
-curl -X PATCH "https://app.all-hands.dev/api/automation/v1/a0219382-2e7c-4156-9991-7b9976739a66" \
+curl -X PATCH "https://app.all-hands.dev/api/automation/v1/320e5e99-f9c0-4159-84fc-490724a67e97" \
   -H "Authorization: Bearer ${OPENHANDS_API_KEY}" \
   -H "Content-Type: application/json" \
   -d '{"enabled": false}'
@@ -47,7 +47,7 @@ curl -X PATCH "https://app.all-hands.dev/api/automation/v1/a0219382-2e7c-4156-99
 Success (HTTP 200):
 ```json
 {
-  "id": "a0219382-2e7c-4156-9991-7b9976739a66",
+  "id": "320e5e99-f9c0-4159-84fc-490724a67e97",
   "name": "Voice Relay Workflow Orchestrator",
   "enabled": false,
   ...
@@ -59,7 +59,7 @@ Success (HTTP 200):
 After disabling, verify the automation is disabled:
 
 ```bash
-curl -s "https://app.all-hands.dev/api/automation/v1/a0219382-2e7c-4156-9991-7b9976739a66" \
+curl -s "https://app.all-hands.dev/api/automation/v1/320e5e99-f9c0-4159-84fc-490724a67e97" \
   -H "Authorization: Bearer ${OPENHANDS_API_KEY}" | jq '.enabled, .name'
 ```
 
@@ -107,7 +107,7 @@ To re-enable:
 
 OR run:
 ```bash
-curl -X PATCH "https://app.all-hands.dev/api/automation/v1/a0219382-2e7c-4156-9991-7b9976739a66" \
+curl -X PATCH "https://app.all-hands.dev/api/automation/v1/320e5e99-f9c0-4159-84fc-490724a67e97" \
   -H "Authorization: Bearer ${OPENHANDS_API_KEY}" \
   -H "Content-Type: application/json" \
   -d '{"enabled": true}'
@@ -122,7 +122,7 @@ To re-enable the automation (via API or UI):
 
 ### Via API
 ```bash
-curl -X PATCH "https://app.all-hands.dev/api/automation/v1/a0219382-2e7c-4156-9991-7b9976739a66" \
+curl -X PATCH "https://app.all-hands.dev/api/automation/v1/320e5e99-f9c0-4159-84fc-490724a67e97" \
   -H "Authorization: Bearer ${OPENHANDS_API_KEY}" \
   -H "Content-Type: application/json" \
   -d '{"enabled": true}'
