@@ -79,6 +79,30 @@ Anyone who clicks this link will be prompted to log in, then see a modal to star
 | "Generate a test page" | HTML file with launch button and dark theme |
 | "Give me a launch URL" | Direct URL to share |
 | "Find the X plugin/skill and create a badge" | Agent searches the repo and generates badge |
+| "Create a badge with editable parameters" | Badge that opens a form with input fields |
+
+## Plugin Parameters
+
+If your plugin defines parameters in `.claude-plugin/plugin.json`, the launch modal will show editable form fields:
+
+```json
+{
+  "name": "my-plugin",
+  "parameters": {
+    "repo_url": {
+      "type": "string",
+      "description": "Repository URL to analyze",
+      "required": true
+    },
+    "depth": {
+      "type": "number", 
+      "default": 3
+    }
+  }
+}
+```
+
+When you ask for a badge with parameters, the agent will read these definitions and generate a URL that shows input fields in the launch modal. Users can fill in or modify values before starting the conversation.
 
 ## How It Works
 

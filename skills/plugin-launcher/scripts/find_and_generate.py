@@ -40,6 +40,46 @@ def github_raw_get(owner: str, repo: str, path: str, ref: str = "main") -> str |
         return None
 
 
+def get_plugin_parameters(owner: str, repo: str, repo_path: str, ref: str = "main") -> dict | None:
+    """Read parameters from plugin.json if they exist."""
+    plugin_json_path = f"{repo_path}/.claude-plugin/plugin.json"
+    content = github_raw_get(owner, repo, plugin_json_path, ref)
+    
+    if not content:
+        return None
+    
+    try:
+        data = json.loads(content)
+        params_def = data.get("parameters", {})
+        if not params_def:
+            return None
+        
+        # Convert parameter definitions to parameter values
+        # Use default if provided, otherwise empty string for strings, 
+        # False for booleans, 0 for numbers
+        result = {}
+        for key, definition in params_def.items():
+            if isinstance(definition, dict):
+                param_type = definition.get("type", "string")
+                default = definition.get("default")
+                
+                if default is not None:
+                    result[key] = default
+                elif param_type == "boolean":
+                    result[key] = False
+                elif param_type == "number":
+                    result[key] = 0
+                else:
+                    result[key] = ""  # Empty string for user to fill in
+            else:
+                # Simple value, use as-is
+                result[key] = definition
+        
+        return result if result else None
+    except (json.JSONDecodeError, KeyError):
+        return None
+
+
 def find_in_marketplace(owner: str, repo: str, name: str, token: str | None = None) -> dict | None:
     """Look for a plugin/skill in the marketplace.json file."""
     # Check for .claude-plugin/marketplace.json
@@ -145,9 +185,12 @@ def find_plugin_or_skill(owner: str, repo: str, name: str, token: str | None = N
 
 def generate_launch_url(source: str, repo_path: str, ref: str = "main",
                         message: str | None = None,
-                        base_url: str = "https://app.all-hands.dev") -> str:
+                        base_url: str = "https://app.all-hands.dev",
+                        parameters: dict | None = None) -> str:
     """Generate a launch URL."""
     plugin_spec = {"source": source, "ref": ref, "repo_path": repo_path}
+    if parameters:
+        plugin_spec["parameters"] = parameters
     plugins_b64 = base64.b64encode(json.dumps([plugin_spec]).encode()).decode()
     
     url = f"{base_url}/launch?plugins={plugins_b64}"
@@ -205,6 +248,10 @@ def main():
         "--verbose", "-v", action="store_true",
         help="Show detailed search progress"
     )
+    parser.add_argument(
+        "--include-params", "-P", action="store_true",
+        help="Read and include parameters from plugin.json (creates editable form fields)"
+    )
     
     args = parser.parse_args()
     
@@ -234,6 +281,16 @@ def main():
     if args.verbose:
         print(f"Found {result['type']}: {result['name']} at {result['repo_path']}", file=sys.stderr)
     
+    # Read parameters if requested
+    parameters = None
+    if args.include_params:
+        parameters = get_plugin_parameters(owner, repo, result["repo_path"], args.ref)
+        if args.verbose:
+            if parameters:
+                print(f"Found parameters: {list(parameters.keys())}", file=sys.stderr)
+            else:
+                print("No parameters found in plugin.json", file=sys.stderr)
+    
     # Generate launch URL
     source = f"github:{owner}/{repo}"
     launch_url = generate_launch_url(
@@ -241,7 +298,8 @@ def main():
         repo_path=result["repo_path"],
         ref=args.ref,
         message=args.message,
-        base_url=args.base_url
+        base_url=args.base_url,
+        parameters=parameters
     )
     
     if args.json:
@@ -255,6 +313,8 @@ def main():
         }
         if result.get("description"):
             output["description"] = result["description"]
+        if parameters:
+            output["parameters"] = parameters
         print(json.dumps(output, indent=2))
     elif args.badge:
         label = args.badge_label or f"Try {result['name'].replace('-', ' ').title()}"
