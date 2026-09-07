@@ -1,0 +1,52 @@
+# bugfix-demo.demorec
+# Template for demonstrating a bug fix in a PR
+Output bugfix-demo.mp4
+Set Width 1280
+Set Height 720
+
+# @voice edge:jenny
+
+@mode terminal
+Set Theme "Dracula"
+
+# ─────────────────────────────────────
+# Show the problem (before)
+# ─────────────────────────────────────
+
+# @narrate:before "Let me show you the bug we're fixing today."
+Type "# First, let's see the original behavior"
+Enter
+Sleep 1s
+
+# @narrate:before "Watch what happens when we run the command."
+Type "myapp process --input data.json"
+Enter
+Sleep 2s
+
+# The output shows the error
+# @narrate:after "See that error? The app crashes when processing empty arrays."
+Sleep 2s
+
+# ─────────────────────────────────────
+# Show the solution
+# ─────────────────────────────────────
+
+# @narrate:before "Now let me show you the fix."
+Type "git checkout feature/fix-empty-arrays"
+Enter
+Sleep 1s
+
+# @narrate:before "Let's run the same command again."
+Type "myapp process --input data.json"
+Enter
+Sleep 2s
+
+# @narrate:after "Now it handles empty arrays gracefully and continues processing."
+Sleep 2s
+
+# ─────────────────────────────────────
+# Closing
+# ─────────────────────────────────────
+
+# @narrate:before "That's the fix in action."
+Sleep 1s
