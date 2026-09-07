@@ -1,0 +1,22 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "jpshackelford-openhands",
+  "description": "JP Shackelford's OpenHands skills and plugins for AI-assisted development workflows",
+  "owner": {
+    "name": "JP Shackelford",
+    "email": "jpshackelford@users.noreply.github.com"
+  },
+  "plugins": [
+    {
+      "name": "pr-shepherd",
+      "source": "./plugins/pr-shepherd",
+      "description": "Orchestrate PRs through the development lifecycle - discover from trajectory data, track on boards, analyze status, and advance through review/merge",
+      "version": "0.1.0",
+      "author": {
+        "name": "JP Shackelford"
+      },
+      "category": "productivity",
+      "tags": ["github", "pull-request", "ci", "review", "workflow", "automation"]
+    }
+  ]
+}
