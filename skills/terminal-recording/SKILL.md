@@ -404,6 +404,7 @@ Add special comment macros to your tape file:
 ```tape
 Output demo.mp4
 Set Theme "Dracula"
+Set TypingSpeed 35ms
 
 # @voice eleven:adam
 
@@ -417,9 +418,11 @@ Type "ls -la"
 Enter
 Sleep 2s
 
-# @narrate:after "Great! Now let's clean up."
-Type "rm temp.txt"
+# @exec-time:3s
+# @narrate:after "Great! The install completed successfully."
+Type "npm install"
 Enter
+Sleep 5s
 
 # @narrate:wait
 ```
@@ -430,9 +433,43 @@ Enter
 |-------|----------|
 | `@voice eleven:<name>` | Set ElevenLabs voice (adam, rachel, josh, etc.) |
 | `@narrate:before "text"` | Speak first, then run action |
-| `@narrate:during "text"` | Speak while action runs |
+| `@narrate:during "text"` | Speak while action runs (recommended for CLI demos) |
 | `@narrate:after "text"` | Run action, then speak |
 | `@narrate:wait` | Sync point - wait for all speech to complete |
+| `@exec-time:Xs` | Hint: next command takes X seconds to execute |
+
+### Timeline Analysis
+
+Before generating audio, analyze timing to catch sync issues:
+
+```bash
+python scripts/narrated_tape.py demo.tape --timeline
+```
+
+This shows a detailed timeline accounting for:
+- **TypingSpeed** - Time to type each character
+- **Enter delay** - Time for keypress
+- **exec-time hints** - Estimated command execution time
+- **Narration duration** - Estimated speech length
+
+Example output:
+```
+📊 Timeline Analysis
+════════════════════════════════════════════════════════════════════════════════
+
+⚙️  Settings: TypingSpeed=35ms, EnterDelay=50ms
+   Exec-time hints: 2 commands
+
+    Time  Duration  Event                                                       
+────────────────────────────────────────────────────────────────────────────────
+   0.00s    2100ms  🎙️ "Welcome to this CLI demo."
+   2.10s     385ms  ⌨️ Type "echo hello" (11 chars)
+   2.49s      50ms  ⏎ Enter
+   ...
+
+⚠️  SYNC ISSUES DETECTED:
+   ⚠️  Line 12: Narration ends 500ms AFTER action starts. Consider @narrate:during.
+```
 
 ### Workflow
 
