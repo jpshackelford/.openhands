@@ -1,0 +1,7 @@
+{
+  "name": "conversation-search-workflow",
+  "version": "0.1.0",
+  "description": "Automated PR workflow for the conversation-search project. Provides skills for orchestrating implementation, review, and merge cycles.",
+  "author": "jpshackelford",
+  "repository": "https://github.com/jpshackelford/.openhands"
+}
