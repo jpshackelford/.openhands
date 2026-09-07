@@ -1,0 +1,44 @@
+# WebTape Form Demo - Demonstrating form interactions
+# Shows typing, clicking, and more advanced browser automation
+
+Output form_demo.mp4
+Set Width 1280
+Set Height 720
+Set TypingSpeed 60ms
+
+# Voice configuration
+# @voice eleven:adam
+
+# Start the demo
+# @narrate:before "Let's demonstrate filling out a web form."
+Navigate "http://localhost:12000"
+Sleep 1.5s
+
+# Scroll to see the form
+Scroll "down" "100"
+Sleep 1s
+
+# Fill in the email field
+# @narrate:before "First, I'll enter an email address."
+Click "#email"
+Sleep 500ms
+Type "#email" "hello@webtape.dev"
+Sleep 1s
+
+# Fill in the message field
+# @narrate:before "Now let's add a message."
+Click "#message"
+Sleep 500ms
+Type "#message" "This is a WebTape demo!"
+Sleep 1s
+
+# Click the submit button
+# @narrate:before "And finally, we submit the form."
+Highlight "#submit-btn"
+Sleep 800ms
+Click "#submit-btn"
+Sleep 2s
+
+# Final message
+# @narrate:after "That's how easy it is to create demo videos with WebTape!"
+Sleep 1s
