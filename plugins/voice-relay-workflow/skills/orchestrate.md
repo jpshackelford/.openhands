@@ -1347,10 +1347,10 @@ The trigger is now **state-counter based**, not WORKLOG.md grep. Because the [Wh
 
 ### Automation ID
 
-Read from the environment variable `ORCHESTRATOR_AUTOMATION_ID`. The deployed v2 orchestrator uses `5f180989-ed9c-42b4-ac9f-5f30f0623316`; do not hardcode this — the v1 ID (`a0219382-2e7c-4156-9991-7b9976739a66`) referenced in earlier revisions of this skill is stale and points at the wrong automation, which is why the 2026-05-22 livelock never self-resolved.
+Read from the environment variable `ORCHESTRATOR_AUTOMATION_ID`. The deployed orchestrator uses `320e5e99-f9c0-4159-84fc-490724a67e97`; do not hardcode this — earlier IDs (the previous v2 `5f180989-ed9c-42b4-ac9f-5f30f0623316` and the original v1 `a0219382-2e7c-4156-9991-7b9976739a66`) are stale and point at now-disabled automations, which is why the 2026-05-22 livelock never self-resolved.
 
 ```bash
-AUTOMATION_ID="${ORCHESTRATOR_AUTOMATION_ID:-5f180989-ed9c-42b4-ac9f-5f30f0623316}"
+AUTOMATION_ID="${ORCHESTRATOR_AUTOMATION_ID:-320e5e99-f9c0-4159-84fc-490724a67e97}"
 ```
 
 ### Detection Logic
@@ -1403,7 +1403,7 @@ fi
 ### How to Disable
 
 ```bash
-AUTOMATION_ID="${ORCHESTRATOR_AUTOMATION_ID:-5f180989-ed9c-42b4-ac9f-5f30f0623316}"
+AUTOMATION_ID="${ORCHESTRATOR_AUTOMATION_ID:-320e5e99-f9c0-4159-84fc-490724a67e97}"
 curl -X PATCH "https://app.all-hands.dev/api/automation/v1/${AUTOMATION_ID}" \
   -H "Authorization: Bearer ${OPENHANDS_API_KEY}" \
   -H "Content-Type: application/json" \
@@ -1424,7 +1424,7 @@ Automation has been disabled to prevent unnecessary runs.
 - OpenHands UI: https://app.all-hands.dev/automations → Find "Voice Relay Workflow Orchestrator" → Toggle enable
 - Or via API:
   ```bash
-  curl -X PATCH "https://app.all-hands.dev/api/automation/v1/a0219382-2e7c-4156-9991-7b9976739a66" \
+  curl -X PATCH "https://app.all-hands.dev/api/automation/v1/320e5e99-f9c0-4159-84fc-490724a67e97" \
     -H "Authorization: Bearer ${OPENHANDS_API_KEY}" \
     -H "Content-Type: application/json" \
     -d '{"enabled": true}'
