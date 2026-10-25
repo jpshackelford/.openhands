@@ -23,10 +23,20 @@ Retrieve the English Standard Version through the bundled, dependency-free CLI a
 Run from the skill directory (or use its absolute path):
 
 ```bash
+# Standard text output (includes Crossway's '(ESV)' suffix)
 python3 scripts/esv.py --include-reference '1 Samuel 8:1-22'
+
+# Structured JSON output with pre-split paragraphs (ideal for handout generators)
+python3 scripts/esv.py --format json '2 Kings 22:8-13'
+
+# Batch fetch multiple passages in a single command
+python3 scripts/esv.py --format json \
+  --batch '2 Chronicles 34:1-4, 8' \
+  --batch '2 Kings 22:8-13' \
+  --batch '2 Kings 23:1-3'
 ```
 
-Use `python3 scripts/esv.py --help` for formatting options. The CLI uses the ESV passage/text API, omits verse numbers and footnotes without altering the words, preserves paragraphs, and requests Crossway's `(ESV)` suffix. Check for a successful response and its `(ESV)` marker; show the reference and only the needed passage. Do not remove the suffix, edit words, translate, or fill in missing text. For verbatim output to a file, redirect stdout; keep scripture output and credentials out of the skill repository. For an unusually long request or a request for a complete book, offer a limited selection or link instead.
+Use `python3 scripts/esv.py --help` for formatting options (`--format json`, `--batch`, `--cache-dir`, `--include-reference`, `--include-headings`, `--indent-paragraphs`, `--line-length`). The CLI uses the ESV passage/text API, omits verse numbers and footnotes without altering the words, preserves paragraphs, and requests Crossway's `(ESV)` suffix. Check for a successful response and its `(ESV)` marker; show the reference and only the needed passage. Do not remove the suffix (unless a full Crossway copyright notice block is displayed on the same handout/page), edit words, translate, or fill in missing text. For verbatim output to a file, redirect stdout; keep scripture output and credentials out of the skill repository. For an unusually long request or a request for a complete book, offer a limited selection or link instead.
 
 ## Check the *use*, not just the request
 
