@@ -1,0 +1,13 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "sunday-school-handouts",
+  "version": "1.0.0",
+  "description": "Generate publication-ready Sunday School scripture reading handouts, prophetic profiles, and illustrated archaeological guides with WeasyPrint, auto-page-fitting, and Wikimedia Commons media tools.",
+  "author": {
+    "name": "JP Shackelford",
+    "email": "jpshackelford@users.noreply.github.com",
+    "url": "https://github.com/jpshackelford"
+  },
+  "repository": "https://github.com/jpshackelford/.openhands",
+  "keywords": ["sunday-school", "weasyprint", "pdf", "handouts", "archaeology", "wikimedia"]
+}

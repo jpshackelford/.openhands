@@ -1,0 +1,166 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "jpshackelford-openhands",
+  "description": "JP Shackelford's OpenHands skills and plugins for AI-assisted development and curriculum production workflows",
+  "owner": {
+    "name": "JP Shackelford",
+    "email": "jpshackelford@users.noreply.github.com"
+  },
+  "plugins": [
+    {
+      "name": "pr-workflow",
+      "source": "./plugins/pr-workflow",
+      "description": "Generic PR workflow orchestration plugin for OpenHands automations",
+      "version": "1.0.0",
+      "author": {
+        "name": "JP Shackelford"
+      },
+      "category": "productivity",
+      "tags": ["github", "pull-request", "ci", "review", "workflow", "automation"]
+    },
+    {
+      "name": "ohtv-workflow",
+      "source": "./plugins/ohtv-workflow",
+      "description": "Automated PR workflow for the ohtv project. Provides skills for orchestrating implementation, manual testing, review, and merge cycles.",
+      "version": "0.1.0",
+      "author": {
+        "name": "JP Shackelford"
+      },
+      "category": "productivity",
+      "tags": ["github", "pull-request", "ohtv", "workflow", "automation"]
+    },
+    {
+      "name": "voice-relay-workflow",
+      "source": "./plugins/voice-relay-workflow",
+      "description": "Automated PR workflow for the voice-relay project. Provides skills for orchestrating implementation, review, and merge cycles.",
+      "version": "0.3.0",
+      "author": {
+        "name": "JP Shackelford"
+      },
+      "category": "productivity",
+      "tags": ["github", "pull-request", "voice-relay", "workflow", "automation"]
+    }
+  ],
+  "skills": [
+    {
+      "name": "esv-scripture",
+      "source": "./skills/esv-scripture",
+      "description": "Retrieve ESV Bible text via Crossway's API (plain text, structured JSON, or batch) and check usage against publisher permissions",
+      "version": "1.1.0",
+      "author": {
+        "name": "JP Shackelford"
+      },
+      "category": "curriculum"
+    },
+    {
+      "name": "sunday-school-handouts",
+      "source": "./skills/sunday-school-handouts",
+      "description": "Generate publication-ready Sunday School scripture reading handouts, prophetic profiles, and illustrated archaeological guides with WeasyPrint, auto-page-fitting, and Wikimedia Commons media tools",
+      "version": "1.0.0",
+      "author": {
+        "name": "JP Shackelford"
+      },
+      "category": "curriculum"
+    },
+    {
+      "name": "design-doc",
+      "source": "./skills/design-doc",
+      "description": "Provides guidance and templates for writing comprehensive technical design documents",
+      "version": "1.0.0",
+      "author": {
+        "name": "JP Shackelford"
+      },
+      "category": "documentation"
+    },
+    {
+      "name": "github-pr-inline-comments",
+      "source": "./skills/github-pr-inline-comments",
+      "description": "Add inline review comments to GitHub Pull Requests using gh CLI and the GitHub API",
+      "version": "1.0.0",
+      "author": {
+        "name": "JP Shackelford"
+      },
+      "category": "productivity"
+    },
+    {
+      "name": "linear-board",
+      "source": "./skills/linear-board",
+      "description": "Manage Linear boards, query issues, update status, and create new issues using the Linear API and linearctl CLI",
+      "version": "1.0.0",
+      "author": {
+        "name": "JP Shackelford"
+      },
+      "category": "productivity"
+    },
+    {
+      "name": "openhands-cloud-api",
+      "source": "./skills/openhands-cloud-api",
+      "description": "Query and debug OpenHands Cloud conversations using the V1 API",
+      "version": "1.0.0",
+      "author": {
+        "name": "JP Shackelford"
+      },
+      "category": "development"
+    },
+    {
+      "name": "openhands-staging-deploy",
+      "source": "./skills/openhands-staging-deploy",
+      "description": "Deploy OpenHands PRs to staging environment",
+      "version": "1.0.0",
+      "author": {
+        "name": "JP Shackelford"
+      },
+      "category": "deployment"
+    },
+    {
+      "name": "openhands-workspace-setup",
+      "source": "./skills/openhands-workspace-setup",
+      "description": "Set up a complete OpenHands development workspace by cloning all necessary repositories",
+      "version": "1.0.0",
+      "author": {
+        "name": "JP Shackelford"
+      },
+      "category": "development"
+    },
+    {
+      "name": "parallel-tasks",
+      "source": "./skills/parallel-tasks",
+      "description": "Spawn background jobs in parallel using lxa CLI to preserve main conversation context",
+      "version": "1.0.0",
+      "author": {
+        "name": "JP Shackelford"
+      },
+      "category": "productivity"
+    },
+    {
+      "name": "plugin-launcher",
+      "source": "./skills/plugin-launcher",
+      "description": "Generate HTML test pages and launch badges for OpenHands plugins and skills",
+      "version": "1.0.0",
+      "author": {
+        "name": "JP Shackelford"
+      },
+      "category": "development"
+    },
+    {
+      "name": "shackelford-test",
+      "source": "./skills/shackelford-test",
+      "description": "A test skill to verify that jpshackelford's custom skills are loading correctly",
+      "version": "1.0.0",
+      "author": {
+        "name": "JP Shackelford"
+      },
+      "category": "testing"
+    },
+    {
+      "name": "terminal-recording",
+      "source": "./skills/terminal-recording",
+      "description": "Create reproducible terminal GIF recordings for PR demonstrations using VHS by Charmbracelet",
+      "version": "1.0.0",
+      "author": {
+        "name": "JP Shackelford"
+      },
+      "category": "documentation"
+    }
+  ]
+}

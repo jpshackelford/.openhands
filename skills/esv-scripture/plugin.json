@@ -1,0 +1,13 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "esv-scripture",
+  "version": "1.1.0",
+  "description": "Retrieve English Standard Version (ESV) Bible text through Crossway's API with structured JSON/batch support and check usage against publisher permissions.",
+  "author": {
+    "name": "JP Shackelford",
+    "email": "jpshackelford@users.noreply.github.com",
+    "url": "https://github.com/jpshackelford"
+  },
+  "repository": "https://github.com/jpshackelford/.openhands",
+  "keywords": ["bible", "esv", "scripture", "crossway", "curriculum"]
+}
